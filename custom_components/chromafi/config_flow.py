@@ -81,7 +81,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         
         self._discovered_devices = {}
         for device in devices:
-            if device.name and "ChromaComfort" in device.name:
+            if device.name and ("ChromaComfort" in device.name or "Chroma-Comfort" in device.name):
                 self._discovered_devices[device.address] = device
         
         if not self._discovered_devices:
