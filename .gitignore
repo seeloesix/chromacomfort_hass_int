@@ -1,0 +1,23 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Development files
+development/
+research/
+
+# IDE files
+.vscode/
+.idea/
+
+# Home Assistant
+*.log
+.storage/
+
+# Temporary files
+*.tmp
+.DS_Store
+
+# Claude Files
+.claude
