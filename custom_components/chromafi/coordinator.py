@@ -8,7 +8,9 @@ from typing import Any
 
 from bleak import BleakClient
 from bleak.backends.device import BLEDevice
+from bleak_retry_connector import establish_connection
 
+from homeassistant.components.bluetooth import async_ble_device_from_address
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -35,15 +37,16 @@ _LOGGER = logging.getLogger(__name__)
 class ChromaFiCoordinator(DataUpdateCoordinator):
     """Data coordinator for ChromaFi device."""
 
-    def __init__(self, hass: HomeAssistant, device: BLEDevice) -> None:
+    def __init__(self, hass: HomeAssistant, address: str) -> None:
         """Initialize the coordinator."""
         super().__init__(
             hass,
             _LOGGER,
-            name=f"{DOMAIN}_{device.address}",
+            name=f"{DOMAIN}_{address}",
             update_interval=timedelta(seconds=UPDATE_INTERVAL),
         )
-        self.device = device
+        self.address = address
+        self.device: BLEDevice | None = None
         self.client: BleakClient | None = None
         self._lock = asyncio.Lock()
         
@@ -56,8 +59,8 @@ class ChromaFiCoordinator(DataUpdateCoordinator):
         }
         
         self.device_info = DeviceInfo(
-            identifiers={(DOMAIN, device.address)},
-            name=device.name or "ChromaComfort Fan",
+            identifiers={(DOMAIN, address)},
+            name="ChromaComfort Fan",
             manufacturer=MANUFACTURER,
             model=MODEL,
         )
@@ -81,11 +84,21 @@ class ChromaFiCoordinator(DataUpdateCoordinator):
         if self.client:
             await self.disconnect()
         
-        self.client = BleakClient(self.device)
-        await self.client.connect()
+        # Get device from Home Assistant's Bluetooth integration
+        self.device = await async_ble_device_from_address(self.hass, self.address, connectable=True)
+        if not self.device:
+            raise UpdateFailed(f"Could not find device {self.address}")
+        
+        # Use retry connector for reliable connection
+        self.client = await establish_connection(
+            BleakClient,
+            self.device,
+            name=self.address,
+            timeout=30.0,
+        )
         
         # Discover services and characteristics
-        services = await self.client.get_services()
+        services = self.client.services
         _LOGGER.debug("Discovered services: %s", services)
         
         # Subscribe to status notifications to monitor device state
