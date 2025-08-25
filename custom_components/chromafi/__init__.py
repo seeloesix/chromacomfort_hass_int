@@ -22,11 +22,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up ChromaFi from a config entry."""
     address = entry.data["address"]
     
+    # Check if device is available
     ble_device = bluetooth.async_ble_device_from_address(hass, address)
     if not ble_device:
         raise ConfigEntryNotReady(f"Could not find ChromaFi device with address {address}")
     
-    coordinator = ChromaFiCoordinator(hass, ble_device)
+    coordinator = ChromaFiCoordinator(hass, address)
     
     await coordinator.async_config_entry_first_refresh()
     

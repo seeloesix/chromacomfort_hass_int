@@ -27,8 +27,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     def __init__(self) -> None:
         """Initialize the config flow."""
-        self._discovered_device: BLEDevice | None = None
-        self._discovered_devices: dict[str, BLEDevice] = {}
+        self._discovered_device: BluetoothServiceInfoBleak | None = None
+        self._discovered_devices: dict[str, BluetoothServiceInfoBleak] = {}
 
     async def async_step_bluetooth(
         self, discovery_info: BluetoothServiceInfoBleak
@@ -37,7 +37,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         await self.async_set_unique_id(discovery_info.address)
         self._abort_if_unique_id_configured()
         
-        self._discovered_device = discovery_info.device
+        self._discovered_device = discovery_info
         
         return await self.async_step_bluetooth_confirm()
 
@@ -85,7 +85,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if discovery_info.address in current_addresses:
                 continue
             if discovery_info.name and ("ChromaComfort" in discovery_info.name or "Chroma-Comfort" in discovery_info.name):
-                self._discovered_devices[discovery_info.address] = discovery_info.device
+                self._discovered_devices[discovery_info.address] = discovery_info
         
         if not self._discovered_devices:
             return self.async_show_form(
