@@ -5,11 +5,13 @@ import logging
 from typing import Any
 
 import voluptuous as vol
-from bleak import BleakScanner
 from bleak.backends.device import BLEDevice
 
 from homeassistant import config_entries
-from homeassistant.components.bluetooth import async_discovered_service_info
+from homeassistant.components.bluetooth import (
+    BluetoothServiceInfoBleak,
+    async_discovered_service_info,
+)
 from homeassistant.const import CONF_ADDRESS
 from homeassistant.data_entry_flow import FlowResult
 
@@ -29,7 +31,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._discovered_devices: dict[str, BLEDevice] = {}
 
     async def async_step_bluetooth(
-        self, discovery_info: bluetooth.BluetoothServiceInfoBleak
+        self, discovery_info: BluetoothServiceInfoBleak
     ) -> FlowResult:
         """Handle the bluetooth discovery step."""
         await self.async_set_unique_id(discovery_info.address)
@@ -75,14 +77,15 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     data=user_input,
                 )
         
-        # Scan for devices
-        scanner = BleakScanner()
-        devices = await scanner.discover()
+        # Get devices discovered by Home Assistant's Bluetooth integration
+        current_addresses = self._async_current_ids()
         
         self._discovered_devices = {}
-        for device in devices:
-            if device.name and ("ChromaComfort" in device.name or "Chroma-Comfort" in device.name):
-                self._discovered_devices[device.address] = device
+        for discovery_info in async_discovered_service_info(self.hass, False):
+            if discovery_info.address in current_addresses:
+                continue
+            if discovery_info.name and ("ChromaComfort" in discovery_info.name or "Chroma-Comfort" in discovery_info.name):
+                self._discovered_devices[discovery_info.address] = discovery_info.device
         
         if not self._discovered_devices:
             return self.async_show_form(
