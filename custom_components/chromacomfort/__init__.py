@@ -1,4 +1,4 @@
-"""The ChromaFi integration for ChromaComfort Multi-Color LED Ventilation Fan."""
+"""The ChromaComfort integration for ChromaComfort Multi-Color LED Ventilation Fan."""
 from __future__ import annotations
 
 import logging
@@ -11,7 +11,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import DOMAIN
-from .coordinator import ChromaFiCoordinator
+from .coordinator import ChromaComfortCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -19,15 +19,15 @@ PLATFORMS: list[Platform] = [Platform.FAN, Platform.LIGHT]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up ChromaFi from a config entry."""
+    """Set up ChromaComfort from a config entry."""
     address = entry.data["address"]
     
     # Check if device is available
     ble_device = bluetooth.async_ble_device_from_address(hass, address)
     if not ble_device:
-        raise ConfigEntryNotReady(f"Could not find ChromaFi device with address {address}")
+        raise ConfigEntryNotReady(f"Could not find ChromaComfort device with address {address}")
     
-    coordinator = ChromaFiCoordinator(hass, address)
+    coordinator = ChromaComfortCoordinator(hass, address)
     
     await coordinator.async_config_entry_first_refresh()
     
@@ -42,7 +42,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
-        coordinator: ChromaFiCoordinator = hass.data[DOMAIN].pop(entry.entry_id)
+        coordinator: ChromaComfortCoordinator = hass.data[DOMAIN].pop(entry.entry_id)
         await coordinator.disconnect()
     
     return unload_ok

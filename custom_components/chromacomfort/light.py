@@ -1,4 +1,4 @@
-"""Light entity for ChromaFi integration."""
+"""Light entity for ChromaComfort integration."""
 from __future__ import annotations
 
 import logging
@@ -16,7 +16,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .coordinator import ChromaFiCoordinator
+from .coordinator import ChromaComfortCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,14 +26,14 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up ChromaFi light entity."""
-    coordinator: ChromaFiCoordinator = hass.data[DOMAIN][entry.entry_id]
+    """Set up ChromaComfort light entity."""
+    coordinator: ChromaComfortCoordinator = hass.data[DOMAIN][entry.entry_id]
     
-    async_add_entities([ChromaFiLight(coordinator, entry)])
+    async_add_entities([ChromaComfortLight(coordinator, entry)])
 
 
-class ChromaFiLight(CoordinatorEntity, LightEntity):
-    """Representation of a ChromaFi light."""
+class ChromaComfortLight(CoordinatorEntity, LightEntity):
+    """Representation of a ChromaComfort light."""
 
     _attr_has_entity_name = True
     _attr_name = "Light"
@@ -42,7 +42,7 @@ class ChromaFiLight(CoordinatorEntity, LightEntity):
 
     def __init__(
         self,
-        coordinator: ChromaFiCoordinator,
+        coordinator: ChromaComfortCoordinator,
         entry: ConfigEntry,
     ) -> None:
         """Initialize the light."""

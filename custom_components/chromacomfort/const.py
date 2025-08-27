@@ -1,7 +1,7 @@
-"""Constants for the ChromaFi integration."""
+"""Constants for the ChromaComfort integration."""
 from typing import Final
 
-DOMAIN: Final = "chromafi"
+DOMAIN: Final = "chromacomfort"
 
 # Device info (discovered from reverse engineering)
 MANUFACTURER: Final = "GooWi Technology Co., Ltd."

@@ -1,4 +1,4 @@
-"""Config flow for ChromaFi integration."""
+"""Config flow for ChromaComfort integration."""
 from __future__ import annotations
 
 import logging
@@ -21,7 +21,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for ChromaFi."""
+    """Handle a config flow for ChromaComfort."""
 
     VERSION = 1
 
@@ -34,7 +34,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, discovery_info: BluetoothServiceInfoBleak
     ) -> FlowResult:
         """Handle the bluetooth discovery step."""
-        _LOGGER.info("ChromaFi Config Flow: Bluetooth discovery triggered for device '%s' (%s)", 
+        _LOGGER.info("ChromaComfort Config Flow: Bluetooth discovery triggered for device '%s' (%s)", 
                     discovery_info.name, discovery_info.address)
         
         await self.async_set_unique_id(discovery_info.address)
@@ -82,15 +82,15 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         
         # Get devices discovered by Home Assistant's Bluetooth integration
         current_addresses = self._async_current_ids()
-        _LOGGER.info("ChromaFi Config Flow: Current configured addresses: %s", current_addresses)
+        _LOGGER.info("ChromaComfort Config Flow: Current configured addresses: %s", current_addresses)
         
         # Get all discovered devices for debugging
         all_discovered = list(async_discovered_service_info(self.hass, False))
-        _LOGGER.info("ChromaFi Config Flow: Total discovered Bluetooth devices: %d", len(all_discovered))
+        _LOGGER.info("ChromaComfort Config Flow: Total discovered Bluetooth devices: %d", len(all_discovered))
         
         # Log all device names for debugging
         for i, discovery_info in enumerate(all_discovered):
-            _LOGGER.info("ChromaFi Config Flow: Device %d: Name='%s', Address='%s', RSSI=%s", 
+            _LOGGER.info("ChromaComfort Config Flow: Device %d: Name='%s', Address='%s', RSSI=%s", 
                         i + 1, discovery_info.name, discovery_info.address, 
                         getattr(discovery_info, 'rssi', 'N/A'))
         
@@ -100,7 +100,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         for discovery_info in all_discovered:
             # Skip already configured devices
             if discovery_info.address in current_addresses:
-                _LOGGER.debug("ChromaFi Config Flow: Skipping already configured device %s", discovery_info.address)
+                _LOGGER.debug("ChromaComfort Config Flow: Skipping already configured device %s", discovery_info.address)
                 continue
             
             # Check device name matching with more variations
@@ -112,7 +112,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             chroma_comfort_hyphen_match = "chroma-comfort" in device_name_lower  
             chroma_match = "chroma" in device_name_lower and "comfort" in device_name_lower
             
-            _LOGGER.info("ChromaFi Config Flow: Checking device '%s' (%s):", device_name, discovery_info.address)
+            _LOGGER.info("ChromaComfort Config Flow: Checking device '%s' (%s):", device_name, discovery_info.address)
             _LOGGER.info("  - ChromaComfort match: %s", chroma_comfort_match)
             _LOGGER.info("  - Chroma-Comfort match: %s", chroma_comfort_hyphen_match) 
             _LOGGER.info("  - Contains Chroma+Comfort: %s", chroma_match)
@@ -120,21 +120,21 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if device_name and (chroma_comfort_match or chroma_comfort_hyphen_match or chroma_match):
                 self._discovered_devices[discovery_info.address] = discovery_info
                 matching_count += 1
-                _LOGGER.info("ChromaFi Config Flow: Found matching ChromaComfort device: '%s' (%s)", 
+                _LOGGER.info("ChromaComfort Config Flow: Found matching ChromaComfort device: '%s' (%s)", 
                            device_name, discovery_info.address)
         
-        _LOGGER.info("ChromaFi Config Flow: Found %d matching ChromaComfort devices out of %d total", 
+        _LOGGER.info("ChromaComfort Config Flow: Found %d matching ChromaComfort devices out of %d total", 
                     matching_count, len(all_discovered))
         
         if not self._discovered_devices:
-            _LOGGER.warning("ChromaFi Config Flow: No ChromaComfort fans found. Total devices scanned: %d", 
+            _LOGGER.warning("ChromaComfort Config Flow: No ChromaComfort fans found. Total devices scanned: %d", 
                           len(all_discovered))
             return self.async_show_form(
                 step_id="user",
                 errors={"base": "no_devices_found"},
             )
         
-        _LOGGER.info("ChromaFi Config Flow: Presenting %d devices for selection", len(self._discovered_devices))
+        _LOGGER.info("ChromaComfort Config Flow: Presenting %d devices for selection", len(self._discovered_devices))
         return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema({

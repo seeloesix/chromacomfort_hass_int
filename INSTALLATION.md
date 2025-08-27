@@ -1,14 +1,14 @@
-# ChromaFi Installation Guide
+# ChromaComfort Installation Guide
 
 ## Quick Installation
 
 ### Option 1: HACS (Recommended)
 1. Install [HACS](https://hacs.xyz/) if not already installed
 2. In HACS: **Integrations** → **⋮** → **Custom repositories**
-3. Add: `https://github.com/seeloesix/chromafi` (Category: Integration)
-4. Install **ChromaFi**
+3. Add: `https://github.com/seeloesix/chromacomfort` (Category: Integration)
+4. Install **ChromaComfort**
 5. Restart Home Assistant
-6. Add integration: **Settings** → **Devices & Services** → **+ ADD INTEGRATION** → **ChromaFi**
+6. Add integration: **Settings** → **Devices & Services** → **+ ADD INTEGRATION** → **ChromaComfort**
 
 ### Option 2: Manual Installation
 ```bash
@@ -17,11 +17,11 @@ ssh homeassistant@YOUR_HA_IP
 
 # Download integration
 cd /tmp
-git clone https://github.com/seeloesix/chromafi.git
+git clone https://github.com/seeloesix/chromacomfort.git
 
 # Install to Home Assistant
-sudo cp -r chromafi/custom_components/chromafi /home/homeassistant/.homeassistant/custom_components/
-sudo chown -R homeassistant:homeassistant /home/homeassistant/.homeassistant/custom_components/chromafi
+sudo cp -r chromacomfort/custom_components/chromacomfort /home/homeassistant/.homeassistant/custom_components/
+sudo chown -R homeassistant:homeassistant /home/homeassistant/.homeassistant/custom_components/chromacomfort
 
 # Restart Home Assistant
 sudo systemctl restart home-assistant@homeassistant.service
@@ -34,7 +34,7 @@ sudo systemctl restart home-assistant@homeassistant.service
 3. **Disconnect iOS app** if currently connected (only one connection allowed)
 4. **Add integration**:
    - **Settings** → **Devices & Services** → **+ ADD INTEGRATION**
-   - Search **"ChromaFi"**
+   - Search **"ChromaComfort"**
    - Select your fan from discovered devices
    - Complete setup
 
@@ -61,7 +61,7 @@ target:
 
 ### Integration Errors  
 - Check logs: **Settings** → **System** → **Logs**
-- Look for "chromafi" entries
+- Look for "chromacomfort" entries
 - Restart integration if needed
 
 ### Connection Issues
@@ -71,4 +71,4 @@ target:
 
 ## Support
 
-For issues: [GitHub Issues](https://github.com/seeloesix/chromafi/issues)
+For issues: [GitHub Issues](https://github.com/seeloesix/chromacomfort/issues)
