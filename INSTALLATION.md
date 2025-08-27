@@ -11,6 +11,25 @@
 6. Add integration: **Settings** → **Devices & Services** → **+ ADD INTEGRATION** → **ChromaComfort**
 
 ### Option 2: Manual Installation
+
+#### For Home Assistant OS:
+```bash
+# Use Terminal addon or SSH addon to access Home Assistant
+# The config directory is at /config
+
+# Download integration
+cd /tmp
+wget https://github.com/seeloesix/chromacomfort/archive/main.zip
+unzip main.zip
+
+# Install to Home Assistant
+cp -r chromacomfort-main/custom_components/chromacomfort /config/custom_components/
+
+# Restart Home Assistant from UI
+# Settings → System → Restart
+```
+
+#### For Home Assistant Core:
 ```bash
 # SSH to Home Assistant device
 ssh homeassistant@YOUR_HA_IP
@@ -20,8 +39,7 @@ cd /tmp
 git clone https://github.com/seeloesix/chromacomfort.git
 
 # Install to Home Assistant
-sudo cp -r chromacomfort/custom_components/chromacomfort /home/homeassistant/.homeassistant/custom_components/
-sudo chown -R homeassistant:homeassistant /home/homeassistant/.homeassistant/custom_components/chromacomfort
+cp -r chromacomfort/custom_components/chromacomfort ~/.homeassistant/custom_components/
 
 # Restart Home Assistant
 sudo systemctl restart home-assistant@homeassistant.service

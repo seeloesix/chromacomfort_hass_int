@@ -14,8 +14,11 @@ Home Assistant custom integration for controlling ChromaComfort Multi-Color LED 
 
 - **ChromaComfort Multi-Color LED Ventilation Fan**
   - Manufacturer: GooWi Technology Co., Ltd.
+  - Manufacturer ID: 10 (0x0A)
   - Model: Chroma-Comfort
   - Connection: Bluetooth Low Energy (BLE)
+  - Service UUID: a08f7710-c37c-11e3-99cc-0228ac012a70
+  - Device may advertise as: "Chroma-Comfort", "OTA Update", or other names
 
 ## Prerequisites
 
@@ -36,20 +39,40 @@ Home Assistant custom integration for controlling ChromaComfort Multi-Color LED 
 8. Restart Home Assistant
 
 ### Method 2: Manual Installation
+
+#### For Home Assistant OS/Container:
+```bash
+# Access Home Assistant (use Terminal addon or SSH)
+# The config directory is at /config
+
+# Create custom components directory if it doesn't exist
+mkdir -p /config/custom_components
+
+# Download and extract integration
+cd /tmp
+wget https://github.com/seeloesix/chromacomfort/archive/main.zip
+unzip main.zip
+cp -r chromacomfort-main/custom_components/chromacomfort /config/custom_components/
+
+# Restart Home Assistant
+# Go to Settings → System → Restart
+```
+
+#### For Home Assistant Core (Python venv):
 ```bash
 # SSH to your Home Assistant device
 ssh homeassistant@YOUR_HA_IP
 
 # Create custom components directory
-sudo mkdir -p /home/homeassistant/.homeassistant/custom_components
+mkdir -p ~/.homeassistant/custom_components
 
 # Download and extract integration
 cd /tmp
 git clone https://github.com/seeloesix/chromacomfort.git
-sudo cp -r chromacomfort/custom_components/chromacomfort /home/homeassistant/.homeassistant/custom_components/
+cp -r chromacomfort/custom_components/chromacomfort ~/.homeassistant/custom_components/
 
 # Set correct permissions
-sudo chown -R homeassistant:homeassistant /home/homeassistant/.homeassistant/custom_components/chromacomfort
+chown -R homeassistant:homeassistant ~/.homeassistant/custom_components/chromacomfort
 
 # Restart Home Assistant
 sudo systemctl restart home-assistant@homeassistant.service
@@ -128,15 +151,17 @@ automation:
 ## Troubleshooting
 
 ### Integration Not Found
-- Verify files exist: `/home/homeassistant/.homeassistant/custom_components/chromacomfort/`
-- Check file permissions: `sudo chown -R homeassistant:homeassistant /home/homeassistant/.homeassistant/custom_components/`
-- Restart Home Assistant: `sudo systemctl restart home-assistant@homeassistant.service`
+- For Home Assistant OS: Verify files exist at `/config/custom_components/chromacomfort/`
+- For Home Assistant Core: Verify files exist at `~/.homeassistant/custom_components/chromacomfort/`
+- Restart Home Assistant: Settings → System → Restart
 
 ### Fan Not Discovered
-- Ensure fan is powered on and within BLE range
-- Check Bluetooth service: `sudo systemctl status bluetooth`
-- Test BLE scan: `sudo hcitool lescan | grep -i chroma`
+- Ensure fan is powered on and within BLE range (30 feet)
+- Check Bluetooth is enabled in Home Assistant
+- The integration detects fans by manufacturer ID (GooWi Technology, ID: 10)
+- Your fan may appear as "OTA Update" or other names - this is normal
 - Only one device can connect at a time (disconnect iOS app if connected)
+- Check Home Assistant Bluetooth monitor for devices with manufacturer ID 10
 
 ### Commands Not Working
 - Check Home Assistant logs: `sudo journalctl -u home-assistant@homeassistant.service -f | grep -i chromacomfort`

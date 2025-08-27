@@ -27,7 +27,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not ble_device:
         raise ConfigEntryNotReady(f"Could not find ChromaComfort device with address {address}")
     
-    coordinator = ChromaComfortCoordinator(hass, address)
+    # Pass entry data to coordinator for device name and room
+    coordinator = ChromaComfortCoordinator(hass, address, entry)
     
     await coordinator.async_config_entry_first_refresh()
     

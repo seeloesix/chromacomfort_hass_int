@@ -12,8 +12,9 @@ from homeassistant.components.bluetooth import (
     BluetoothServiceInfoBleak,
     async_discovered_service_info,
 )
-from homeassistant.const import CONF_ADDRESS
+from homeassistant.const import CONF_ADDRESS, CONF_NAME
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers import area_registry as ar
 
 from .const import DOMAIN
 
@@ -49,18 +50,77 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> FlowResult:
         """Confirm discovery."""
         if user_input is not None:
-            return self.async_create_entry(
-                title=self._discovered_device.name or "ChromaComfort Fan",
-                data={
-                    CONF_ADDRESS: self._discovered_device.address,
-                },
-            )
+            # Store device info and proceed to configuration
+            self.context["device_address"] = self._discovered_device.address
+            self.context["device_name"] = self._discovered_device.name or "ChromaComfort Fan"
+            return await self.async_step_device_config()
 
         self._set_confirm_only()
         return self.async_show_form(
             step_id="bluetooth_confirm",
             description_placeholders={
                 "name": self._discovered_device.name or "ChromaComfort Fan"
+            },
+        )
+    
+    async def async_step_device_config(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Configure device name and room."""
+        errors = {}
+        
+        if user_input is not None:
+            # Get the device address from context
+            address = self.context.get("device_address")
+            if self._discovered_device:
+                address = self._discovered_device.address
+            elif "selected_device" in self.context:
+                address = self.context["selected_device"]
+            
+            # Use custom name if provided, otherwise use default
+            device_name = user_input.get(CONF_NAME) or self.context.get("device_name", "ChromaComfort Fan")
+            
+            return self.async_create_entry(
+                title=device_name,
+                data={
+                    CONF_ADDRESS: address,
+                    CONF_NAME: device_name,
+                    "room": user_input.get("room"),
+                },
+            )
+        
+        # Get room list from Home Assistant areas
+        areas = {}
+        try:
+            area_registry = ar.async_get(self.hass)
+            areas = {area.id: area.name for area in area_registry.areas.values()}
+        except Exception:
+            _LOGGER.debug("Could not get area registry")
+        
+        # Add common room names if area registry is empty
+        if not areas:
+            areas = {
+                "living_room": "Living Room",
+                "bedroom": "Bedroom",
+                "bathroom": "Bathroom",
+                "kitchen": "Kitchen",
+                "office": "Office",
+                "none": "No Room",
+            }
+        else:
+            areas["none"] = "No Room"
+        
+        default_name = self.context.get("device_name", "ChromaComfort Fan")
+        
+        return self.async_show_form(
+            step_id="device_config",
+            data_schema=vol.Schema({
+                vol.Optional(CONF_NAME, default=default_name): str,
+                vol.Optional("room", default="none"): vol.In(areas),
+            }),
+            errors=errors,
+            description_placeholders={
+                "device": self.context.get("device_name", "ChromaComfort Fan"),
             },
         )
 
@@ -75,10 +135,12 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 await self.async_set_unique_id(user_input[CONF_ADDRESS])
                 self._abort_if_unique_id_configured()
                 
-                return self.async_create_entry(
-                    title=self._discovered_devices[user_input[CONF_ADDRESS]].name or "ChromaComfort Fan",
-                    data=user_input,
-                )
+                # Store selected device info and proceed to configuration
+                selected_device = self._discovered_devices[user_input[CONF_ADDRESS]]
+                self.context["selected_device"] = user_input[CONF_ADDRESS]
+                self.context["device_name"] = selected_device.name or "ChromaComfort Fan"
+                self._discovered_device = selected_device
+                return await self.async_step_device_config()
         
         # Get devices discovered by Home Assistant's Bluetooth integration
         current_addresses = self._async_current_ids()
@@ -103,21 +165,42 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.debug("ChromaComfort Config Flow: Skipping already configured device %s", discovery_info.address)
                 continue
             
-            # Check device name matching with more variations
-            device_name = discovery_info.name or ""
-            device_name_lower = device_name.lower()
+            device_name = discovery_info.name or "Unknown"
             
-            # Check various name patterns (case insensitive)
-            chroma_comfort_match = "chromacomfort" in device_name_lower
-            chroma_comfort_hyphen_match = "chroma-comfort" in device_name_lower  
-            chroma_match = "chroma" in device_name_lower and "comfort" in device_name_lower
+            # PRIMARY DETECTION: Check manufacturer data (most reliable)
+            is_chromacomfort = False
+            has_service_uuid = False
             
-            _LOGGER.info("ChromaComfort Config Flow: Checking device '%s' (%s):", device_name, discovery_info.address)
-            _LOGGER.info("  - ChromaComfort match: %s", chroma_comfort_match)
-            _LOGGER.info("  - Chroma-Comfort match: %s", chroma_comfort_hyphen_match) 
-            _LOGGER.info("  - Contains Chroma+Comfort: %s", chroma_match)
+            # Check for manufacturer ID 10 (0x0A) - GooWi Technology
+            if hasattr(discovery_info, 'manufacturer_data') and discovery_info.manufacturer_data:
+                for manufacturer_id, data in discovery_info.manufacturer_data.items():
+                    if manufacturer_id == 10:  # GooWi Technology manufacturer ID
+                        is_chromacomfort = True
+                        _LOGGER.info("ChromaComfort Config Flow: Found GooWi device by manufacturer ID 10: '%s' (%s)", 
+                                   device_name, discovery_info.address)
+                        _LOGGER.debug("  Manufacturer data: %s", data.hex() if data else "None")
+                        break
             
-            if device_name and (chroma_comfort_match or chroma_comfort_hyphen_match or chroma_match):
+            # SECONDARY: Check for the specific service UUID
+            if not is_chromacomfort and hasattr(discovery_info, 'service_uuids') and discovery_info.service_uuids:
+                for uuid in discovery_info.service_uuids:
+                    if "a08f7710-c37c-11e3-99cc-0228ac012a70" in uuid.lower():  # ChromaComfort service UUID
+                        is_chromacomfort = True
+                        has_service_uuid = True
+                        _LOGGER.info("ChromaComfort Config Flow: Found device by service UUID: '%s' (%s)", 
+                                   device_name, discovery_info.address)
+                        break
+            
+            # Log device check for debugging
+            if is_chromacomfort:
+                _LOGGER.info("ChromaComfort Config Flow: ✓ Detected ChromaComfort fan: '%s' (%s)", 
+                           device_name, discovery_info.address)
+            else:
+                _LOGGER.debug("ChromaComfort Config Flow: Skipping non-ChromaComfort device: '%s' (%s)", 
+                            device_name, discovery_info.address)
+            
+            # Accept device if it has the right manufacturer data or service UUID
+            if is_chromacomfort:
                 self._discovered_devices[discovery_info.address] = discovery_info
                 matching_count += 1
                 _LOGGER.info("ChromaComfort Config Flow: Found matching ChromaComfort device: '%s' (%s)", 

@@ -11,6 +11,8 @@ from bleak.backends.device import BLEDevice
 from bleak_retry_connector import establish_connection
 
 from homeassistant.components.bluetooth import async_ble_device_from_address
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -37,7 +39,7 @@ _LOGGER = logging.getLogger(__name__)
 class ChromaComfortCoordinator(DataUpdateCoordinator):
     """Data coordinator for ChromaComfort device."""
 
-    def __init__(self, hass: HomeAssistant, address: str) -> None:
+    def __init__(self, hass: HomeAssistant, address: str, entry: ConfigEntry) -> None:
         """Initialize the coordinator."""
         super().__init__(
             hass,
@@ -46,9 +48,14 @@ class ChromaComfortCoordinator(DataUpdateCoordinator):
             update_interval=timedelta(seconds=UPDATE_INTERVAL),
         )
         self.address = address
+        self.entry = entry
         self.device: BLEDevice | None = None
         self.client: BleakClient | None = None
         self._lock = asyncio.Lock()
+        
+        # Get custom name and room from config entry
+        self.custom_name = entry.data.get(CONF_NAME, "ChromaComfort Fan")
+        self.room = entry.data.get("room")
         
         # Device state (will be populated during reverse engineering)
         self.data = {
@@ -58,12 +65,17 @@ class ChromaComfortCoordinator(DataUpdateCoordinator):
             "rgb_color": (255, 255, 255),
         }
         
+        # Build device info with custom name and area
         self.device_info = DeviceInfo(
             identifiers={(DOMAIN, address)},
-            name="ChromaComfort Fan",
+            name=self.custom_name,
             manufacturer=MANUFACTURER,
             model=MODEL,
         )
+        
+        # Add suggested area if room is specified
+        if self.room and self.room != "none":
+            self.device_info["suggested_area"] = self.room
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from the device."""
