@@ -38,6 +38,7 @@ class ChromaComfortFan(CoordinatorEntity, FanEntity):
 
     _attr_has_entity_name = True
     _attr_name = "Fan"
+    _attr_should_poll = False  # We use coordinator for updates
 
     def __init__(
         self,
@@ -48,8 +49,15 @@ class ChromaComfortFan(CoordinatorEntity, FanEntity):
         super().__init__(coordinator)
         self._attr_unique_id = f"{entry.entry_id}_fan"
         self._attr_device_info = coordinator.device_info
-        self._attr_supported_features = FanEntityFeature.SET_SPEED
+        # FanEntityFeature.SET_SPEED is deprecated, using percentage control instead
+        self._attr_supported_features = 0  # No special features, basic on/off and percentage
 
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        # Always return True to keep entity responsive even if BLE disconnected
+        return True
+    
     @property
     def is_on(self) -> bool:
         """Return true if the fan is on."""

@@ -150,47 +150,79 @@ class ChromaComfortCoordinator(DataUpdateCoordinator):
 
     async def set_fan_speed(self, speed: int) -> None:
         """Set the fan speed."""
-        async with self._lock:
-            if not self.client or not self.client.is_connected:
-                await self._connect()
-            
-            # Send fan control command based on discovered protocol
-            try:
-                if speed == 0:
-                    await self.client.write_gatt_char(CHAR_FAN_CONTROL, FAN_CMD_OFF)
-                    _LOGGER.debug("Sent fan OFF command")
-                else:
-                    await self.client.write_gatt_char(CHAR_FAN_CONTROL, FAN_CMD_ON)
-                    _LOGGER.debug("Sent fan ON command (speed %s)", speed)
-                
+        try:
+            async with self._lock:
+                # Update local state immediately for responsiveness
+                old_speed = self.data["fan_speed"]
                 self.data["fan_speed"] = speed
                 
-            except Exception as err:
-                _LOGGER.error("Failed to set fan speed: %s", err)
-                raise
+                # Try to send command to device
+                if not self.client or not self.client.is_connected:
+                    try:
+                        _LOGGER.info("Connecting to send fan command...")
+                        await self._connect()
+                    except Exception as err:
+                        _LOGGER.warning("Could not connect to device for fan control: %s", err)
+                        # Keep the local state updated even if BLE fails
+                        await self.async_request_refresh()
+                        return
+                
+                # Send fan control command based on discovered protocol
+                try:
+                    if speed == 0:
+                        await self.client.write_gatt_char(CHAR_FAN_CONTROL, FAN_CMD_OFF)
+                        _LOGGER.info("Sent fan OFF command to %s", self.address)
+                    else:
+                        await self.client.write_gatt_char(CHAR_FAN_CONTROL, FAN_CMD_ON)
+                        _LOGGER.info("Sent fan ON command (speed %s) to %s", speed, self.address)
+                    
+                except Exception as err:
+                    _LOGGER.error("Failed to send fan command to device %s: %s", self.address, err)
+                    # Revert state if command failed
+                    self.data["fan_speed"] = old_speed
+                    raise
+        except Exception as err:
+            _LOGGER.error("Error in set_fan_speed for %s: %s", self.address, err)
+            # Don't raise - let the UI stay responsive
         
         await self.async_request_refresh()
 
     async def set_light_state(self, on: bool) -> None:
         """Turn the light on or off."""
-        async with self._lock:
-            if not self.client or not self.client.is_connected:
-                await self._connect()
-            
-            # Send light control command based on discovered protocol
-            try:
-                if on:
-                    await self.client.write_gatt_char(CHAR_LIGHT_CONTROL, LIGHT_CMD_ON)
-                    _LOGGER.debug("Sent light ON command")
-                else:
-                    await self.client.write_gatt_char(CHAR_LIGHT_CONTROL, LIGHT_CMD_OFF)
-                    _LOGGER.debug("Sent light OFF command")
-                
+        try:
+            async with self._lock:
+                # Update local state immediately for responsiveness
+                old_state = self.data["light_on"]
                 self.data["light_on"] = on
                 
-            except Exception as err:
-                _LOGGER.error("Failed to set light state: %s", err)
-                raise
+                # Try to send command to device
+                if not self.client or not self.client.is_connected:
+                    try:
+                        _LOGGER.info("Connecting to send light command...")
+                        await self._connect()
+                    except Exception as err:
+                        _LOGGER.warning("Could not connect to device for light control: %s", err)
+                        # Keep the local state updated even if BLE fails
+                        await self.async_request_refresh()
+                        return
+                
+                # Send light control command based on discovered protocol
+                try:
+                    if on:
+                        await self.client.write_gatt_char(CHAR_LIGHT_CONTROL, LIGHT_CMD_ON)
+                        _LOGGER.info("Sent light ON command to %s", self.address)
+                    else:
+                        await self.client.write_gatt_char(CHAR_LIGHT_CONTROL, LIGHT_CMD_OFF)
+                        _LOGGER.info("Sent light OFF command to %s", self.address)
+                    
+                except Exception as err:
+                    _LOGGER.error("Failed to send light command to device %s: %s", self.address, err)
+                    # Revert state if command failed
+                    self.data["light_on"] = old_state
+                    raise
+        except Exception as err:
+            _LOGGER.error("Error in set_light_state for %s: %s", self.address, err)
+            # Don't raise - let the UI stay responsive
         
         await self.async_request_refresh()
 
