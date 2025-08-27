@@ -1,0 +1,75 @@
+# Add this to your Home Assistant configuration.yaml to create debug sensors
+# This will help you see what Bluetooth devices are discovered without SSH
+
+# Template sensors to debug Bluetooth discovery
+template:
+  - sensor:
+      - name: "Bluetooth Device Count"
+        state: "{{ integration_entities('bluetooth') | length }}"
+        attributes:
+          all_devices: >
+            {%- set devices = [] -%}
+            {%- for entity in integration_entities('bluetooth') -%}
+              {%- set device_state = states[entity] -%}
+              {%- if device_state -%}
+                {%- set device_info = {
+                  'entity': entity,
+                  'name': device_state.name,
+                  'address': device_state.attributes.get('address', 'N/A'),
+                  'rssi': device_state.attributes.get('rssi', 'N/A')
+                } -%}
+                {%- set devices = devices + [device_info] -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {{ devices }}
+      
+      - name: "ChromaComfort Devices"
+        state: >
+          {%- set chromacomfort_count = 0 -%}
+          {%- for entity in integration_entities('bluetooth') -%}
+            {%- set device_state = states[entity] -%}
+            {%- if device_state -%}
+              {%- set device_name = device_state.name | lower -%}
+              {%- if 'chromacomfort' in device_name or 'chroma-comfort' in device_name or ('chroma' in device_name and 'comfort' in device_name) -%}
+                {%- set chromacomfort_count = chromacomfort_count + 1 -%}
+              {%- endif -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ chromacomfort_count }}
+        attributes:
+          chromacomfort_devices: >
+            {%- set chromacomfort_devices = [] -%}
+            {%- for entity in integration_entities('bluetooth') -%}
+              {%- set device_state = states[entity] -%}
+              {%- if device_state -%}
+                {%- set device_name = device_state.name | lower -%}
+                {%- if 'chromacomfort' in device_name or 'chroma-comfort' in device_name or ('chroma' in device_name and 'comfort' in device_name) -%}
+                  {%- set device_info = {
+                    'entity': entity,
+                    'name': device_state.name,
+                    'address': device_state.attributes.get('address', 'N/A'),
+                    'rssi': device_state.attributes.get('rssi', 'N/A')
+                  } -%}
+                  {%- set chromacomfort_devices = chromacomfort_devices + [device_info] -%}
+                {%- endif -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {{ chromacomfort_devices }}
+
+# Automation to log Bluetooth devices (optional)
+automation:
+  - alias: "Log Bluetooth Devices for ChromaFi Debug"
+    trigger:
+      - platform: time_pattern
+        minutes: "/5"  # Every 5 minutes
+    condition:
+      - condition: state
+        entity_id: sensor.bluetooth_device_count
+        state: "not_unavailable"
+    action:
+      - service: system_log.write
+        data:
+          message: >
+            ChromaFi Debug - Total Bluetooth devices: {{ states('sensor.bluetooth_device_count') }}, 
+            ChromaComfort devices: {{ states('sensor.chromacomfort_devices') }}
+          level: info

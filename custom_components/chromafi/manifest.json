@@ -11,8 +11,6 @@
   "version": "0.1.0",
   "bluetooth": [
     {
-      "manufacturer_id": null,
-      "service_uuid": null,
       "local_name": "Chroma-Comfort*"
     }
   ]
