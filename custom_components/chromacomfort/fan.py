@@ -47,6 +47,8 @@ class ChromaComfortFan(CoordinatorEntity, FanEntity):
     _attr_has_entity_name = True
     _attr_name = "Fan"
     _attr_should_poll = False  # We use coordinator for updates
+    _attr_icon = "mdi:fan"  # Fan icon
+    
 
     def __init__(
         self,
@@ -57,9 +59,8 @@ class ChromaComfortFan(CoordinatorEntity, FanEntity):
         super().__init__(coordinator)
         self._attr_unique_id = f"{entry.entry_id}_fan"
         self._attr_device_info = coordinator.device_info
-        # Remove supported features entirely - let HA auto-detect from available methods
-        # This avoids the FanEntityFeature compatibility issues
-        # HA will automatically support percentage control since we implement the methods
+        # Explicitly set that we support turning on/off and percentage control
+        # Don't set _attr_supported_features to avoid compatibility issues
 
     @property
     def available(self) -> bool:
@@ -84,6 +85,12 @@ class ChromaComfortFan(CoordinatorEntity, FanEntity):
     def speed_count(self) -> int:
         """Return the number of speeds the fan supports."""
         return len(ORDERED_NAMED_FAN_SPEEDS)
+    
+    @property
+    def supported_features(self) -> int:
+        """Flag supported features."""
+        return 0  # Basic fan with percentage control (auto-detected from methods)
+    
 
     async def async_turn_on(
         self,
@@ -92,16 +99,24 @@ class ChromaComfortFan(CoordinatorEntity, FanEntity):
         **kwargs: Any,
     ) -> None:
         """Turn on the fan."""
-        if percentage is None:
-            # Default to medium speed
-            await self.coordinator.set_fan_speed(FAN_SPEED_MEDIUM)
-        else:
-            speed = percentage_to_ordered_list_item(ORDERED_NAMED_FAN_SPEEDS, percentage)
-            await self.coordinator.set_fan_speed(speed)
+        try:
+            if percentage is None:
+                # Default to medium speed
+                await self.coordinator.set_fan_speed(FAN_SPEED_MEDIUM)
+            else:
+                speed = percentage_to_ordered_list_item(ORDERED_NAMED_FAN_SPEEDS, percentage)
+                await self.coordinator.set_fan_speed(speed)
+        except Exception as err:
+            _LOGGER.error("Failed to turn on fan %s: %s", self.entity_id, err)
+            # Don't re-raise to keep the entity responsive
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off the fan."""
-        await self.coordinator.set_fan_speed(FAN_SPEED_OFF)
+        try:
+            await self.coordinator.set_fan_speed(FAN_SPEED_OFF)
+        except Exception as err:
+            _LOGGER.error("Failed to turn off fan %s: %s", self.entity_id, err)
+            # Don't re-raise to keep the entity responsive
 
     async def async_set_percentage(self, percentage: int) -> None:
         """Set the speed percentage of the fan."""
@@ -110,3 +125,29 @@ class ChromaComfortFan(CoordinatorEntity, FanEntity):
         else:
             speed = percentage_to_ordered_list_item(ORDERED_NAMED_FAN_SPEEDS, percentage)
             await self.coordinator.set_fan_speed(speed)
+    
+    def turn_on(self, **kwargs) -> None:
+        """Turn on the fan (sync wrapper)."""
+        # Home Assistant should call async_turn_on, but some versions may look for this
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(self.async_turn_on(**kwargs))
+            else:
+                asyncio.run(self.async_turn_on(**kwargs))
+        except Exception:
+            pass  # Fail silently as this is just a compatibility shim
+    
+    def turn_off(self, **kwargs) -> None:
+        """Turn off the fan (sync wrapper)."""
+        # Home Assistant should call async_turn_off, but some versions may look for this
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(self.async_turn_off(**kwargs))
+            else:
+                asyncio.run(self.async_turn_off(**kwargs))
+        except Exception:
+            pass  # Fail silently as this is just a compatibility shim

@@ -37,6 +37,7 @@ class ChromaComfortLight(CoordinatorEntity, LightEntity):
 
     _attr_has_entity_name = True
     _attr_name = "Light"
+    _attr_icon = "mdi:led-strip-variant"  # LED light icon
     _attr_color_mode = ColorMode.RGB
     _attr_supported_color_modes = {ColorMode.RGB}
 

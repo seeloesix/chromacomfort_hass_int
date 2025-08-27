@@ -6,9 +6,11 @@
   "dependencies": ["bluetooth"],
   "documentation": "https://github.com/seeloesix/chromacomfort",
   "integration_type": "device",
+  "category": "climate",
   "iot_class": "local_polling",
   "requirements": ["bleak>=0.21.0", "bleak-retry-connector>=3.4.0"],
   "version": "0.1.0",
+  "icon": "mdi:fan-chevron-up",
   "bluetooth": [
     {
       "manufacturer_id": 10
