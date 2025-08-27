@@ -48,37 +48,13 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_bluetooth_confirm(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Confirm discovery."""
-        if user_input is not None:
-            # Store device info and proceed to configuration
-            self.context["device_address"] = self._discovered_device.address
-            self.context["device_name"] = self._discovered_device.name or "ChromaComfort Fan"
-            return await self.async_step_device_config()
-
-        self._set_confirm_only()
-        return self.async_show_form(
-            step_id="bluetooth_confirm",
-            description_placeholders={
-                "name": self._discovered_device.name or "ChromaComfort Fan"
-            },
-        )
-    
-    async def async_step_device_config(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Configure device name and room."""
+        """Confirm and configure discovered device."""
         errors = {}
         
         if user_input is not None:
-            # Get the device address from context
-            address = self.context.get("device_address")
-            if self._discovered_device:
-                address = self._discovered_device.address
-            elif "selected_device" in self.context:
-                address = self.context["selected_device"]
-            
-            # Use custom name if provided, otherwise use default
-            device_name = user_input.get(CONF_NAME) or self.context.get("device_name", "ChromaComfort Fan")
+            # Get the device address
+            address = self._discovered_device.address
+            device_name = user_input.get(CONF_NAME) or (self._discovered_device.name or "ChromaComfort Fan")
             
             return self.async_create_entry(
                 title=device_name,
@@ -110,17 +86,17 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         else:
             areas["none"] = "No Room"
         
-        default_name = self.context.get("device_name", "ChromaComfort Fan")
+        default_name = self._discovered_device.name or "ChromaComfort Fan"
         
         return self.async_show_form(
-            step_id="device_config",
+            step_id="bluetooth_confirm",
             data_schema=vol.Schema({
                 vol.Optional(CONF_NAME, default=default_name): str,
                 vol.Optional("room", default="none"): vol.In(areas),
             }),
             errors=errors,
             description_placeholders={
-                "device": self.context.get("device_name", "ChromaComfort Fan"),
+                "name": default_name
             },
         )
 
@@ -140,7 +116,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self.context["selected_device"] = user_input[CONF_ADDRESS]
                 self.context["device_name"] = selected_device.name or "ChromaComfort Fan"
                 self._discovered_device = selected_device
-                return await self.async_step_device_config()
+                return await self.async_step_bluetooth_confirm()
         
         # Get devices discovered by Home Assistant's Bluetooth integration
         current_addresses = self._async_current_ids()
