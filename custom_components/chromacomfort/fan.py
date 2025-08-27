@@ -6,6 +6,7 @@ from typing import Any
 
 from homeassistant.components.fan import FanEntity, FanEntityFeature
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -28,9 +29,16 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up ChromaComfort fan entity."""
-    coordinator: ChromaComfortCoordinator = hass.data[DOMAIN][entry.entry_id]
-    
-    async_add_entities([ChromaComfortFan(coordinator, entry)])
+    try:
+        coordinator: ChromaComfortCoordinator = hass.data[DOMAIN][entry.entry_id]
+        _LOGGER.info("Setting up ChromaComfort fan entity for %s", entry.data.get(CONF_NAME, "Unknown"))
+        
+        fan = ChromaComfortFan(coordinator, entry)
+        async_add_entities([fan])
+        
+        _LOGGER.info("Successfully created fan entity: %s", fan.entity_id if hasattr(fan, 'entity_id') else "Unknown ID")
+    except Exception as err:
+        _LOGGER.error("Failed to set up ChromaComfort fan entity: %s", err, exc_info=True)
 
 
 class ChromaComfortFan(CoordinatorEntity, FanEntity):
