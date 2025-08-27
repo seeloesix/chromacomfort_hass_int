@@ -30,7 +30,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Pass entry data to coordinator for device name and room
     coordinator = ChromaComfortCoordinator(hass, address, entry)
     
-    await coordinator.async_config_entry_first_refresh()
+    # Try initial refresh but don't fail setup if it doesn't work
+    try:
+        await coordinator.async_config_entry_first_refresh()
+    except Exception as err:
+        _LOGGER.warning("Initial connection to %s failed: %s. Will retry in background.", address, err)
+        # Set default data so entities can be created
+        coordinator.data = {
+            "fan_speed": 0,
+            "light_on": False,
+            "brightness": 255,
+            "rgb_color": (255, 255, 255),
+        }
     
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = coordinator

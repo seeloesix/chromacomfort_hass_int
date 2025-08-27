@@ -82,13 +82,16 @@ class ChromaComfortCoordinator(DataUpdateCoordinator):
         try:
             async with self._lock:
                 if not self.client or not self.client.is_connected:
+                    _LOGGER.debug("Attempting to connect to device %s", self.address)
                     await self._connect()
                 
                 # TODO: Read actual device state via Bluetooth
                 # For now, return current state
+                _LOGGER.debug("Returning current state for device %s: %s", self.address, self.data)
                 return self.data
                 
         except Exception as err:
+            _LOGGER.error("Error communicating with device %s: %s", self.address, err)
             raise UpdateFailed(f"Error communicating with device: {err}") from err
 
     async def _connect(self) -> None:
@@ -97,21 +100,40 @@ class ChromaComfortCoordinator(DataUpdateCoordinator):
             await self.disconnect()
         
         # Get device from Home Assistant's Bluetooth integration
-        self.device = await async_ble_device_from_address(self.hass, self.address, connectable=True)
+        # Note: async_ble_device_from_address is NOT async, despite the name
+        self.device = async_ble_device_from_address(self.hass, self.address, connectable=True)
         if not self.device:
+            _LOGGER.error("Could not find BLE device with address %s", self.address)
             raise UpdateFailed(f"Could not find device {self.address}")
         
-        # Use retry connector for reliable connection
-        self.client = await establish_connection(
-            BleakClient,
-            self.device,
-            name=self.address,
-            timeout=30.0,
-        )
+        _LOGGER.info("Found BLE device: %s at %s", self.device.name, self.address)
+        
+        try:
+            # Use retry connector for reliable connection
+            _LOGGER.debug("Establishing BLE connection to %s", self.address)
+            self.client = await establish_connection(
+                BleakClient,
+                self.device,
+                name=self.address,
+                timeout=30.0,
+            )
+            _LOGGER.info("Successfully connected to %s", self.address)
+        except Exception as err:
+            _LOGGER.error("Failed to establish BLE connection to %s: %s", self.address, err)
+            raise UpdateFailed(f"Could not connect to device: {err}") from err
         
         # Discover services and characteristics
-        services = self.client.services
-        _LOGGER.debug("Discovered services: %s", services)
+        try:
+            services = self.client.services
+            _LOGGER.debug("Discovered services: %s", services)
+            
+            # Log all characteristics for debugging
+            for service in services:
+                _LOGGER.debug("Service %s:", service.uuid)
+                for char in service.characteristics:
+                    _LOGGER.debug("  Characteristic %s (properties: %s)", char.uuid, char.properties)
+        except Exception as err:
+            _LOGGER.warning("Could not enumerate services: %s", err)
         
         # Subscribe to status notifications to monitor device state
         try:
