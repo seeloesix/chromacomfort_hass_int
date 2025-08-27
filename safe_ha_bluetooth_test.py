@@ -20,7 +20,7 @@ TEMPLATE_CODE = '''
   {%- set ns.devices = ns.devices + [device_info] -%}
 {%- endfor -%}
 
-=== ChromaFi Bluetooth Discovery Test ===
+=== ChromaComfort Bluetooth Discovery Test ===
 Total Bluetooth entities: {{ integration_entities("bluetooth") | length }}
 
 {%- for device in integration_entities("bluetooth") -%}

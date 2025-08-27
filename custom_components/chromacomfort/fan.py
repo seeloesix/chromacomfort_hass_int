@@ -1,4 +1,4 @@
-"""Fan entity for ChromaFi integration."""
+"""Fan entity for ChromaComfort integration."""
 from __future__ import annotations
 
 import logging
@@ -15,7 +15,7 @@ from homeassistant.util.percentage import (
 )
 
 from .const import DOMAIN, FAN_SPEED_HIGH, FAN_SPEED_LOW, FAN_SPEED_MEDIUM, FAN_SPEED_OFF
-from .coordinator import ChromaFiCoordinator
+from .coordinator import ChromaComfortCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -27,21 +27,21 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up ChromaFi fan entity."""
-    coordinator: ChromaFiCoordinator = hass.data[DOMAIN][entry.entry_id]
+    """Set up ChromaComfort fan entity."""
+    coordinator: ChromaComfortCoordinator = hass.data[DOMAIN][entry.entry_id]
     
-    async_add_entities([ChromaFiFan(coordinator, entry)])
+    async_add_entities([ChromaComfortFan(coordinator, entry)])
 
 
-class ChromaFiFan(CoordinatorEntity, FanEntity):
-    """Representation of a ChromaFi fan."""
+class ChromaComfortFan(CoordinatorEntity, FanEntity):
+    """Representation of a ChromaComfort fan."""
 
     _attr_has_entity_name = True
     _attr_name = "Fan"
 
     def __init__(
         self,
-        coordinator: ChromaFiCoordinator,
+        coordinator: ChromaComfortCoordinator,
         entry: ConfigEntry,
     ) -> None:
         """Initialize the fan."""

@@ -1,4 +1,4 @@
-# ChromaFi Package Structure
+# ChromaComfort Package Structure
 
 ## For End Users
 
@@ -7,17 +7,17 @@
 - `INSTALLATION.md` - Quick installation guide  
 - `LICENSE` - MIT license
 - `hacs.json` - HACS integration configuration
-- `custom_components/chromafi/` - **The actual Home Assistant integration**
+- `custom_components/chromacomfort/` - **The actual Home Assistant integration**
 
 ## Project Organization
 
 ```
-ChromaFi/
+ChromaComfort/
 ├── README.md                    # Main documentation
 ├── INSTALLATION.md              # Installation guide
 ├── LICENSE                      # MIT license
 ├── hacs.json                   # HACS configuration
-├── custom_components/chromafi/  # Home Assistant integration
+├── custom_components/chromacomfort/  # Home Assistant integration
 │   ├── __init__.py
 │   ├── manifest.json
 │   ├── config_flow.py
@@ -27,18 +27,18 @@ ChromaFi/
 │   ├── const.py
 │   └── translations/
 ├── development/                 # Development tools (optional)
-│   ├── chromafi_gatt_logger.py
+│   ├── chromacomfort_gatt_logger.py
 │   ├── mitm_proxy/
 │   └── ble/
 └── research/                    # Research documentation (optional)
-    ├── CHROMAFI_COMMANDS_DISCOVERED.md
+    ├── CHROMACOMFORT_COMMANDS_DISCOVERED.md
     └── Various reverse engineering docs
 ```
 
 ## What You Need
 
 **For Installation:**
-- Copy `custom_components/chromafi/` to your Home Assistant
+- Copy `custom_components/chromacomfort/` to your Home Assistant
 - Follow `INSTALLATION.md` or `README.md`
 
 **Everything Else:**

@@ -58,7 +58,7 @@ template:
 
 # Automation to log Bluetooth devices (optional)
 automation:
-  - alias: "Log Bluetooth Devices for ChromaFi Debug"
+  - alias: "Log Bluetooth Devices for ChromaComfort Debug"
     trigger:
       - platform: time_pattern
         minutes: "/5"  # Every 5 minutes
@@ -70,6 +70,6 @@ automation:
       - service: system_log.write
         data:
           message: >
-            ChromaFi Debug - Total Bluetooth devices: {{ states('sensor.bluetooth_device_count') }}, 
+            ChromaComfort Debug - Total Bluetooth devices: {{ states('sensor.bluetooth_device_count') }}, 
             ChromaComfort devices: {{ states('sensor.chromacomfort_devices') }}
           level: info

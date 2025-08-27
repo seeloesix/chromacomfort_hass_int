@@ -111,7 +111,7 @@ async def scan_for_chromacomfort():
                            device.name, device.address, rssi)
             
             _LOGGER.info("")
-            _LOGGER.info("✅ These devices should be discoverable by the ChromaFi integration!")
+            _LOGGER.info("✅ These devices should be discoverable by the ChromaComfort integration!")
             
             # Test connectivity
             await test_connectivity(chromacomfort_devices[0])
@@ -126,7 +126,7 @@ async def scan_for_chromacomfort():
             _LOGGER.warning("4. Check if the fan name is different than expected")
             _LOGGER.warning("")
             _LOGGER.warning("If you see a device that should be your fan, check its name")
-            _LOGGER.warning("and update the ChromaFi integration matching logic.")
+            _LOGGER.warning("and update the ChromaComfort integration matching logic.")
         
     except Exception as e:
         _LOGGER.error("Error during BLE scan: %s", e, exc_info=True)

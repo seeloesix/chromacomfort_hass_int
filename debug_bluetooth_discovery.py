@@ -15,7 +15,7 @@ _LOGGER = logging.getLogger(__name__)
 
 async def debug_bluetooth_discovery(hass: HomeAssistant):
     """Debug function to list all discovered Bluetooth devices."""
-    _LOGGER.info("=== ChromaFi Bluetooth Discovery Debug ===")
+    _LOGGER.info("=== ChromaComfort Bluetooth Discovery Debug ===")
     
     # Get all discovered devices
     all_discovered = list(async_discovered_service_info(hass, False))

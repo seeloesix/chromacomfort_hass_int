@@ -1,4 +1,4 @@
-# ChromaFi - Home Assistant Integration
+# ChromaComfort - Home Assistant Integration
 
 Home Assistant custom integration for controlling ChromaComfort Multi-Color LED Ventilation Fans via Bluetooth Low Energy (BLE).
 
@@ -29,10 +29,10 @@ Home Assistant custom integration for controlling ChromaComfort Multi-Color LED 
 1. Ensure [HACS](https://hacs.xyz/) is installed
 2. In HACS, go to **Integrations**
 3. Click **⋮** → **Custom repositories** 
-4. Add repository: `https://github.com/seeloesix/chromafi`
+4. Add repository: `https://github.com/seeloesix/chromacomfort`
 5. Category: **Integration**
 6. Click **Add**
-7. Install **ChromaFi** integration
+7. Install **ChromaComfort** integration
 8. Restart Home Assistant
 
 ### Method 2: Manual Installation
@@ -45,11 +45,11 @@ sudo mkdir -p /home/homeassistant/.homeassistant/custom_components
 
 # Download and extract integration
 cd /tmp
-git clone https://github.com/seeloesix/chromafi.git
-sudo cp -r chromafi/custom_components/chromafi /home/homeassistant/.homeassistant/custom_components/
+git clone https://github.com/seeloesix/chromacomfort.git
+sudo cp -r chromacomfort/custom_components/chromacomfort /home/homeassistant/.homeassistant/custom_components/
 
 # Set correct permissions
-sudo chown -R homeassistant:homeassistant /home/homeassistant/.homeassistant/custom_components/chromafi
+sudo chown -R homeassistant:homeassistant /home/homeassistant/.homeassistant/custom_components/chromacomfort
 
 # Restart Home Assistant
 sudo systemctl restart home-assistant@homeassistant.service
@@ -60,7 +60,7 @@ sudo systemctl restart home-assistant@homeassistant.service
 1. **Restart Home Assistant** after installation
 2. Go to **Settings** → **Devices & Services**
 3. Click **+ ADD INTEGRATION**
-4. Search for **"ChromaFi"**
+4. Search for **"ChromaComfort"**
 5. Select your ChromaComfort fan from discovered devices
 6. Complete configuration
 
@@ -128,7 +128,7 @@ automation:
 ## Troubleshooting
 
 ### Integration Not Found
-- Verify files exist: `/home/homeassistant/.homeassistant/custom_components/chromafi/`
+- Verify files exist: `/home/homeassistant/.homeassistant/custom_components/chromacomfort/`
 - Check file permissions: `sudo chown -R homeassistant:homeassistant /home/homeassistant/.homeassistant/custom_components/`
 - Restart Home Assistant: `sudo systemctl restart home-assistant@homeassistant.service`
 
@@ -139,9 +139,9 @@ automation:
 - Only one device can connect at a time (disconnect iOS app if connected)
 
 ### Commands Not Working
-- Check Home Assistant logs: `sudo journalctl -u home-assistant@homeassistant.service -f | grep -i chromafi`
+- Check Home Assistant logs: `sudo journalctl -u home-assistant@homeassistant.service -f | grep -i chromacomfort`
 - Verify fan is within 30 feet of Home Assistant device
-- Restart integration: **Settings** → **Devices & Services** → **ChromaFi** → **⋮** → **Reload**
+- Restart integration: **Settings** → **Devices & Services** → **ChromaComfort** → **⋮** → **Reload**
 
 ### Connection Issues
 - Only one device can connect to the fan at a time
@@ -164,7 +164,7 @@ Enable debug logging for troubleshooting:
 logger:
   default: info
   logs:
-    custom_components.chromafi: debug
+    custom_components.chromacomfort: debug
 ```
 
 ## Current Limitations
@@ -184,7 +184,7 @@ logger:
 
 ## Support
 
-- **GitHub Issues**: [https://github.com/seeloesix/chromafi/issues](https://github.com/seeloesix/chromafi/issues)
+- **GitHub Issues**: [https://github.com/seeloesix/chromacomfort/issues](https://github.com/seeloesix/chromacomfort/issues)
 - **Home Assistant Community**: [https://community.home-assistant.io](https://community.home-assistant.io)
 
 ## License

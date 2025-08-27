@@ -1,4 +1,4 @@
-"""Data coordinator for ChromaFi integration."""
+"""Data coordinator for ChromaComfort integration."""
 from __future__ import annotations
 
 import asyncio
@@ -34,8 +34,8 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
-class ChromaFiCoordinator(DataUpdateCoordinator):
-    """Data coordinator for ChromaFi device."""
+class ChromaComfortCoordinator(DataUpdateCoordinator):
+    """Data coordinator for ChromaComfort device."""
 
     def __init__(self, hass: HomeAssistant, address: str) -> None:
         """Initialize the coordinator."""

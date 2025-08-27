@@ -1,5 +1,5 @@
 {
-  "name": "ChromaFi",
+  "name": "ChromaComfort",
   "hacs": "1.6.0",
   "domains": ["fan", "light"],
   "iot_class": "Local Push",
