@@ -11,7 +11,10 @@
   "version": "0.1.0",
   "bluetooth": [
     {
-      "local_name": "Chroma-Comfort*"
+      "manufacturer_id": 10
+    },
+    {
+      "service_uuid": "a08f7710-c37c-11e3-99cc-0228ac012a70"
     }
   ]
 }

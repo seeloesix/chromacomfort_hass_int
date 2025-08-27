@@ -11,6 +11,14 @@
       "bluetooth_confirm": {
         "title": "Confirm ChromaComfort Fan",
         "description": "Do you want to set up {name}?"
+      },
+      "device_config": {
+        "title": "Configure ChromaComfort Fan",
+        "description": "Customize the name and room for {device}.",
+        "data": {
+          "name": "Device Name",
+          "room": "Room"
+        }
       }
     },
     "error": {
