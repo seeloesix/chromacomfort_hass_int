@@ -51,6 +51,12 @@ class ChromaComfortLight(CoordinatorEntity, LightEntity):
         self._attr_device_info = coordinator.device_info
 
     @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        # Always return True to keep entity responsive even if BLE disconnected
+        return True
+    
+    @property
     def is_on(self) -> bool:
         """Return true if the light is on."""
         return self.coordinator.data.get("light_on", False)
