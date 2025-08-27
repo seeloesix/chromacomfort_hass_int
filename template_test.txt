@@ -1,0 +1,62 @@
+{%- set ns = namespace(devices=[], chromacomfort_count=0) -%}
+
+=== ChromaFi Bluetooth Discovery Test ===
+Current Time: {{ now() }}
+
+=== Checking Bluetooth Integration ===
+Bluetooth Integration Loaded: {{ integration_entities("bluetooth") | length > 0 }}
+Total Bluetooth Entities: {{ integration_entities("bluetooth") | length }}
+
+=== Searching All Integrations for Bluetooth Devices ===
+{%- for integration in states | map(attribute='entity_id') | map('regex_replace', '^([^.]+)\..*', '\\1') | unique | list -%}
+  {%- for entity in states[integration] | selectattr('attributes.address', 'defined') | list -%}
+    {%- set ns.devices = ns.devices + [entity] -%}
+  {%- endfor -%}
+{%- endfor -%}
+
+Found {{ ns.devices | length }} devices with addresses
+
+=== All Devices with Bluetooth Addresses ===
+{%- for device in ns.devices -%}
+Device {{ loop.index }}:
+  Entity ID: {{ device.entity_id }}
+  Name: {{ device.name }}
+  State: {{ device.state }}
+  Address: {{ device.attributes.address }}
+  RSSI: {{ device.attributes.rssi | default('N/A') }}
+  
+  {%- set device_name = (device.name | string | lower) -%}
+  {%- set is_chromacomfort = 'chromacomfort' in device_name or 'chroma-comfort' in device_name or ('chroma' in device_name and 'comfort' in device_name) -%}
+  ChromaComfort Match: {{ is_chromacomfort }}
+  {%- if is_chromacomfort -%}
+    {%- set ns.chromacomfort_count = ns.chromacomfort_count + 1 -%}
+  *** 🎯 CHROMACOMFORT DEVICE FOUND! ***
+  {%- endif %}
+
+{%- else -%}
+No devices with Bluetooth addresses found in Home Assistant.
+
+This could mean:
+1. Bluetooth integration is not properly set up
+2. No Bluetooth devices are discovered
+3. Devices are not exposing address attributes
+
+Try checking Settings -> Devices & Services -> Bluetooth
+{%- endfor -%}
+
+=== SUMMARY ===
+Total devices with addresses: {{ ns.devices | length }}
+ChromaComfort devices found: {{ ns.chromacomfort_count }}
+
+{%- if ns.chromacomfort_count > 0 -%}
+✅ SUCCESS: Found {{ ns.chromacomfort_count }} ChromaComfort device(s)!
+The ChromaFi integration should be able to discover these.
+{%- else -%}
+❌ No ChromaComfort devices found.
+
+Troubleshooting:
+1. Make sure your ChromaComfort fan is powered ON
+2. Check if Bluetooth is enabled in HA (Settings -> System -> Hardware)
+3. Your fan might be advertising with a different name
+4. Try moving closer to the fan
+{%- endif %}
