@@ -9,17 +9,13 @@
         }
       },
       "bluetooth_confirm": {
-        "title": "Confirm ChromaComfort Fan",
-        "description": "Do you want to set up {name}?"
-      },
-      "device_config": {
         "title": "Configure ChromaComfort Fan",
-        "description": "Customize the name and room for {device}.",
+        "description": "Customize the name and room for {name}.",
         "data": {
           "name": "Device Name",
           "room": "Room"
         }
-      }
+      },
     },
     "error": {
       "no_devices_found": "No ChromaComfort fans found. Make sure your fan is powered on and in range.",

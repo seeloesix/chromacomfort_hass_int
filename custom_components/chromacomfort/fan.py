@@ -57,8 +57,9 @@ class ChromaComfortFan(CoordinatorEntity, FanEntity):
         super().__init__(coordinator)
         self._attr_unique_id = f"{entry.entry_id}_fan"
         self._attr_device_info = coordinator.device_info
-        # FanEntityFeature.SET_SPEED is deprecated, using percentage control instead
-        self._attr_supported_features = 0  # No special features, basic on/off and percentage
+        # Remove supported features entirely - let HA auto-detect from available methods
+        # This avoids the FanEntityFeature compatibility issues
+        # HA will automatically support percentage control since we implement the methods
 
     @property
     def available(self) -> bool:
