@@ -46,7 +46,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = coordinator
     
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    # Forward setup to platforms
+    _LOGGER.info("Setting up platforms for ChromaComfort: %s", PLATFORMS)
+    try:
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+        _LOGGER.info("Successfully set up platforms for ChromaComfort")
+    except Exception as err:
+        _LOGGER.error("Failed to set up platforms: %s", err, exc_info=True)
+        raise
     
     return True
 

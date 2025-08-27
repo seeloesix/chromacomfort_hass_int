@@ -169,6 +169,11 @@ class ChromaComfortCoordinator(DataUpdateCoordinator):
                 
                 # Send fan control command based on discovered protocol
                 try:
+                    # Check if characteristic exists before writing
+                    if not self.client.services:
+                        _LOGGER.warning("No services discovered yet for %s", self.address)
+                        return
+                    
                     if speed == 0:
                         await self.client.write_gatt_char(CHAR_FAN_CONTROL, FAN_CMD_OFF)
                         _LOGGER.info("Sent fan OFF command to %s", self.address)
@@ -208,6 +213,11 @@ class ChromaComfortCoordinator(DataUpdateCoordinator):
                 
                 # Send light control command based on discovered protocol
                 try:
+                    # Check if characteristic exists before writing
+                    if not self.client.services:
+                        _LOGGER.warning("No services discovered yet for %s", self.address)
+                        return
+                    
                     if on:
                         await self.client.write_gatt_char(CHAR_LIGHT_CONTROL, LIGHT_CMD_ON)
                         _LOGGER.info("Sent light ON command to %s", self.address)
