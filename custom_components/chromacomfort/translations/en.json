@@ -15,7 +15,7 @@
           "name": "Device Name",
           "room": "Room"
         }
-      },
+      }
     },
     "error": {
       "no_devices_found": "No ChromaComfort fans found. Make sure your fan is powered on and in range.",
