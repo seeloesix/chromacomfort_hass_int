@@ -3,13 +3,15 @@
 ## Project Overview
 Home Assistant custom integration for ChromaComfort Multi-Color LED Ventilation Fans via Bluetooth Low Energy (BLE).
 
-## Current Status
-- ✅ **Basic Integration Working**: Fan and light control entities
-- ✅ **Bluetooth Discovery Fixed**: Now detects by manufacturer ID instead of device name
+## Current Status (2025-08-28)
+- ✅ **Basic Integration Working**: Fan and light control entities created
+- ✅ **Bluetooth Discovery Fixed**: Detects by manufacturer ID 10 (GooWi Technology)
 - ✅ **Repository Renamed**: From chromafi to chromacomfort
-- ✅ **Custom Device Names**: Users can set custom names during setup
-- ✅ **Room Assignment**: Optional room/area selection during configuration
-- ⚠️ **Partial Control**: ON/OFF works, advanced features in development
+- ✅ **Single Config Window**: Streamlined setup with device info, name, and room selection
+- ✅ **Enhanced Logging**: Comprehensive BLE connection debugging
+- ✅ **Error Recovery**: Entities work even if BLE connection fails
+- ⚠️ **BLE Connection Issues**: Commands appear to send but device doesn't respond
+- ⚠️ **Partial Control**: Framework complete, needs command verification
 
 ## Key Technical Details
 
@@ -65,50 +67,75 @@ chromacomfort/
 
 ## Configuration Flow
 
-### Device Setup Process
-1. **Discovery**: Detects devices by manufacturer ID 10 (GooWi Technology)
-2. **Selection**: Choose from list of discovered ChromaComfort fans
-3. **Customization** (NEW):
-   - Set custom device name (default: "ChromaComfort Fan")
-   - Select room/area (optional, integrates with HA areas)
-4. **Completion**: Creates device with custom name in specified room
+### Device Setup Process (Updated)
+1. **Bluetooth Discovery**: Auto-detects by manufacturer ID 10
+2. **Single Configuration Window**:
+   - Shows device info (Model, Manufacturer, Address)
+   - Custom name field (editable)
+   - Room/area dropdown (optional, defaults to "No Room")
+3. **Device Creation**: Immediate entity creation with selected settings
 
 ### Config Entry Data
-- `address`: BLE MAC address
-- `name`: Custom device name
-- `room`: Selected room/area ID
+- `address`: BLE MAC address (e.g., "64:72:D8:CC:47:21")
+- `name`: Custom device name (user-defined)
+- `room`: Selected room/area ID or "none"
 
 ## Known Issues & Limitations
 
+### Critical Issues (2025-08-28)
+1. **BLE Commands Not Working**: 
+   - Commands send successfully but device doesn't respond
+   - Status notifications subscribe OK
+   - Possible characteristic UUID mismatch
+   - Need to verify actual command format
+
+2. **Fan Entity Issues**:
+   - Fixed: FanEntityFeature must return enum not int
+   - Fixed: Added sync wrappers for turn_on/turn_off
+   - Working: Entity creates and UI responds
+
 ### Current Limitations
-1. **Fan Speed**: Only ON/OFF (no speed control yet)
-2. **RGB Colors**: Framework in place but needs command refinement
-3. **Brightness**: Not yet implemented
-4. **iOS App Conflict**: Cannot use simultaneously with HA
+1. **Fan Speed**: Only ON/OFF (no speed control)
+2. **RGB Colors**: Framework complete, commands untested
+3. **Brightness**: Not implemented
+4. **iOS App Conflict**: Cannot use simultaneously
 
 ### Common Problems
-1. **Fan Not Found**: Usually due to:
-   - iOS app connected (disconnect it)
-   - Fan out of range (stay within 30 feet)
-   - Bluetooth not enabled in HA
+1. **Device Not Found**:
+   - Ensure manufacturer ID 10 in advertisement
+   - Device may show as "OTA Update" or "Chroma-Comfort"
+   - Check Bluetooth adapter is enabled
 
-2. **Connection Drops**: BLE connections can be unstable
-   - Integration has retry logic
-   - May need manual reconnection
+2. **"Skip and Finish" Button**:
+   - This is Home Assistant's default device page
+   - Cannot be removed (HA limitation)
+   - Just a confirmation screen, not configuration
 
 ## Development Roadmap
 
+### Immediate Priority
+1. **Fix BLE Command Execution**:
+   - Verify characteristic UUIDs match device
+   - Confirm command format (may need different bytes)
+   - Test with direct BLE tools (gatttool/bluetoothctl)
+   - Capture traffic from working iOS app
+
+2. **Debug Current Connection**:
+   - Log shows successful connection but commands fail
+   - Check if write requires response vs write-without-response
+   - Verify characteristic properties and permissions
+
 ### Next Steps
-1. **Multi-speed fan control** (Low/Medium/High)
-2. **RGB color implementation** (needs command format analysis)
+1. **Multi-speed fan control** (after basic commands work)
+2. **RGB color implementation** (needs protocol analysis)
 3. **Brightness control** (0-100%)
 4. **Scene support** (preset colors/modes)
 
 ### Testing Needed
-1. Test with multiple fans simultaneously
-2. Verify manufacturer ID is consistent across all units
-3. Capture more BLE traffic for advanced features
-4. Test stability over extended periods
+1. Verify actual characteristic UUIDs on device
+2. Capture BLE traffic from working iOS app
+3. Test write vs write-without-response
+4. Confirm command byte format
 
 ## Research & Development Files
 
@@ -162,6 +189,27 @@ cp -r chromacomfort-main/custom_components/chromacomfort /config/custom_componen
 4. Color commands need reverse engineering for full RGB support
 5. Consider implementing a service for raw BLE commands for testing
 
+## Recent Fixes (2025-08-28)
+
+### Configuration Flow
+- Consolidated to single window with device info display
+- Fixed FanEntityFeature type error (must be enum not int)
+- Added comprehensive BLE logging with prefixes ([BLE], [FAN], [LIGHT], etc.)
+- Fixed BleakGATTServiceCollection len() error
+
+### Entity Improvements
+- Added sync wrappers for fan turn_on/turn_off compatibility
+- Entities stay available even if BLE disconnects
+- Better error handling to prevent UI freezing
+
+### Logging Enhancements
+- Step-by-step BLE connection tracking
+- Service/characteristic discovery logging
+- Command verification before sending
+- Hex command values shown in debug logs
+
 ---
-Last Updated: 2025-08-27
+Last Updated: 2025-08-28
 Integration Version: 0.1.0
+Python: 3.11+
+Home Assistant: 2023.1.0+

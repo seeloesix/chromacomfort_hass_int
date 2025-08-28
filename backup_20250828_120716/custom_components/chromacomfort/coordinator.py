@@ -170,29 +170,6 @@ class ChromaComfortCoordinator(DataUpdateCoordinator):
             _LOGGER.info("[BLE] Client connected: %s", self.client.is_connected)
             _LOGGER.debug("[BLE] Client details: %s", self.client)
             
-            # Check if device is already paired/bonded
-            try:
-                is_paired = getattr(self.client, 'is_paired', False)
-                if callable(is_paired):
-                    is_paired = await is_paired() if hasattr(is_paired, '__await__') else is_paired()
-                _LOGGER.info("[BLE] Device pairing status: %s", "Paired" if is_paired else "Not paired")
-            except Exception:
-                _LOGGER.debug("[BLE] Could not determine pairing status")
-            
-            # Do service discovery FIRST, then attempt pairing
-            _LOGGER.info("[BLE] Performing service discovery before pairing attempt")
-            try:
-                services = self.client.services
-                if not services:
-                    _LOGGER.warning("[BLE] No services found - this may indicate auth is required first")
-                else:
-                    _LOGGER.info("[BLE] Found %d services without authentication", len(list(services)))
-            except Exception as disc_err:
-                _LOGGER.info("[BLE] Service discovery failed: %s", disc_err)
-            
-            # Establish control session - mimic iPhone app's connection workflow
-            await self._establish_control_session()
-            
         except Exception as err:
             _LOGGER.error("[BLE] ❌ Failed to establish BLE connection to %s: %s", self.address, err)
             _LOGGER.error("[BLE] Error type: %s", type(err).__name__)
@@ -498,15 +475,7 @@ class ChromaComfortCoordinator(DataUpdateCoordinator):
                 return True
                 
             except Exception as e:
-                error_msg = str(e).lower()
-                if 'permission' in error_msg or 'authentication' in error_msg or 'pair' in error_msg:
-                    _LOGGER.warning("[FAN] ❌ %s %s failed - Session/Permission issue: %s", action, desc, e)
-                    _LOGGER.info("[FAN] Device may require proper control session establishment")
-                elif 'not connected' in error_msg:
-                    _LOGGER.warning("[FAN] ❌ %s %s failed - Connection lost: %s", action, desc, e)
-                    _LOGGER.info("[FAN] Control session may have expired")
-                else:
-                    _LOGGER.warning("[FAN] ❌ %s %s failed: %s", action, desc, e)
+                _LOGGER.warning("[FAN] ❌ %s %s failed: %s", action, desc, e)
                 continue
         
         return False
@@ -534,99 +503,10 @@ class ChromaComfortCoordinator(DataUpdateCoordinator):
                 return True
                 
             except Exception as e:
-                error_msg = str(e).lower()
-                if 'permission' in error_msg or 'authentication' in error_msg or 'pair' in error_msg:
-                    _LOGGER.warning("[LIGHT] ❌ %s %s failed - Session/Permission issue: %s", action, desc, e)
-                    _LOGGER.info("[LIGHT] Device may require proper control session establishment")
-                elif 'not connected' in error_msg:
-                    _LOGGER.warning("[LIGHT] ❌ %s %s failed - Connection lost: %s", action, desc, e)
-                    _LOGGER.info("[LIGHT] Control session may have expired")
-                else:
-                    _LOGGER.warning("[LIGHT] ❌ %s %s failed: %s", action, desc, e)
+                _LOGGER.warning("[LIGHT] ❌ %s %s failed: %s", action, desc, e)
                 continue
         
         return False
-
-    async def _establish_control_session(self) -> None:
-        """Establish control session with device - mimic iPhone app workflow."""
-        _LOGGER.info("[SESSION] 🎮 Establishing control session with device")
-        
-        try:
-            # Step 1: Read device status to announce our presence
-            _LOGGER.info("[SESSION] Step 1: Reading device status to establish presence")
-            try:
-                status_data = await self.client.read_gatt_char(CHAR_DEVICE_STATUS)
-                _LOGGER.info("[SESSION] ✅ Device status read: %s", status_data.hex() if status_data else "No data")
-                if status_data:
-                    self._handle_status_notification(None, status_data)
-            except Exception as status_err:
-                _LOGGER.info("[SESSION] Status read failed: %s", status_err)
-            
-            # Step 2: Read all control characteristics to establish session
-            _LOGGER.info("[SESSION] Step 2: Reading all control characteristics to establish session")
-            
-            control_chars = [
-                (CHAR_LIGHT_CONTROL, "Light Control"),
-                (CHAR_FAN_CONTROL, "Fan Control"), 
-                (CHAR_COLOR_CONTROL, "Color Control"),
-            ]
-            
-            for char_uuid, char_name in control_chars:
-                try:
-                    _LOGGER.info("[SESSION] Reading %s (%s)", char_name, char_uuid)
-                    data = await self.client.read_gatt_char(char_uuid)
-                    _LOGGER.info("[SESSION] ✅ %s current value: %s", char_name, 
-                               data.hex() if data else "No data")
-                except Exception as read_err:
-                    _LOGGER.info("[SESSION] %s read failed: %s", char_name, read_err)
-            
-            # Step 3: Send "session start" handshake - try writing current state back
-            _LOGGER.info("[SESSION] Step 3: Sending session handshake")
-            try:
-                # Try writing the light control's current value back to it (harmless echo)
-                light_data = await self.client.read_gatt_char(CHAR_LIGHT_CONTROL)
-                if light_data:
-                    _LOGGER.info("[SESSION] Echoing light control value back: %s", light_data.hex())
-                    await self.client.write_gatt_char(CHAR_LIGHT_CONTROL, light_data)
-                    _LOGGER.info("[SESSION] ✅ Session handshake successful")
-                else:
-                    # Try a neutral handshake command
-                    handshake_cmd = bytes([0x00])
-                    _LOGGER.info("[SESSION] Sending neutral handshake: %s", handshake_cmd.hex())
-                    await self.client.write_gatt_char(CHAR_LIGHT_CONTROL, handshake_cmd)
-                    _LOGGER.info("[SESSION] ✅ Neutral handshake successful")
-            except Exception as handshake_err:
-                _LOGGER.info("[SESSION] Handshake failed: %s", handshake_err)
-            
-            # Step 4: Subscribe to notifications (iPhone app likely does this)
-            _LOGGER.info("[SESSION] Step 4: Subscribing to status notifications")
-            try:
-                await self.client.start_notify(CHAR_DEVICE_STATUS, self._handle_status_notification)
-                _LOGGER.info("[SESSION] ✅ Status notifications enabled")
-            except Exception as notify_err:
-                _LOGGER.info("[SESSION] Status notification subscription failed: %s", notify_err)
-            
-            # Step 5: Try alternative notification characteristics
-            _LOGGER.info("[SESSION] Step 5: Checking for additional notification characteristics")
-            try:
-                for service in self.client.services:
-                    for char in service.characteristics:
-                        if 'notify' in char.properties and char.uuid.lower() != CHAR_DEVICE_STATUS.lower():
-                            try:
-                                _LOGGER.info("[SESSION] Subscribing to additional notification: %s", char.uuid)
-                                await self.client.start_notify(char.uuid, self._handle_alt_status_notification)
-                                _LOGGER.info("[SESSION] ✅ Additional notification enabled: %s", char.uuid)
-                                break  # Only subscribe to one additional for now
-                            except Exception:
-                                continue
-            except Exception as alt_notify_err:
-                _LOGGER.debug("[SESSION] Alternative notification setup failed: %s", alt_notify_err)
-            
-            _LOGGER.info("[SESSION] 🎮 Control session established - device should now accept commands")
-            
-        except Exception as err:
-            _LOGGER.warning("[SESSION] ⚠️ Session establishment encountered error: %s", err)
-            _LOGGER.info("[SESSION] Continuing - some session features may not work")
 
     def _handle_status_notification(self, sender, data: bytes) -> None:
         """Handle status notifications from the device."""
