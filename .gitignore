@@ -21,3 +21,7 @@ research/
 
 # Claude Files
 .claude
+
+#backup files
+backup*
+
