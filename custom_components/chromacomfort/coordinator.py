@@ -254,6 +254,74 @@ class ChromaComfortCoordinator(DataUpdateCoordinator):
         
         return False
 
+    async def _verify_fan_status(self, expected_on: bool) -> bool:
+        """Verify fan physical status by reading device state."""
+        try:
+            # Method 1: Read status characteristic
+            try:
+                status_data = await self.client.read_gatt_char(CHAR_DEVICE_STATUS)
+                if status_data and len(status_data) > 6:
+                    control_byte = status_data[6]
+                    fan_on = (control_byte & 0x80) != 0
+                    _LOGGER.info("[VERIFY] Status check - Fan expected: %s, actual: %s (byte: 0x%02x)", 
+                                expected_on, fan_on, control_byte)
+                    return fan_on == expected_on
+            except Exception as e:
+                _LOGGER.debug("[VERIFY] Could not read status characteristic: %s", e)
+            
+            # Method 2: Try to read fan control characteristic
+            try:
+                fan_data = await self.client.read_gatt_char(CHAR_FAN_CONTROL)
+                if fan_data:
+                    fan_value = fan_data[0] if fan_data else 0
+                    fan_on = fan_value != 0
+                    _LOGGER.info("[VERIFY] Fan control read - Expected: %s, actual: %s (value: 0x%02x)", 
+                                expected_on, fan_on, fan_value)
+                    return fan_on == expected_on
+            except Exception as e:
+                _LOGGER.debug("[VERIFY] Could not read fan control characteristic: %s", e)
+            
+            _LOGGER.warning("[VERIFY] Could not verify fan status - no readable characteristics")
+            return False
+            
+        except Exception as e:
+            _LOGGER.error("[VERIFY] Error verifying fan status: %s", e)
+            return False
+
+    async def _verify_light_status(self, expected_on: bool) -> bool:
+        """Verify light physical status by reading device state."""
+        try:
+            # Method 1: Read status characteristic  
+            try:
+                status_data = await self.client.read_gatt_char(CHAR_DEVICE_STATUS)
+                if status_data and len(status_data) > 6:
+                    control_byte = status_data[6]
+                    light_on = (control_byte & 0x60) != 0  # 0x20 or 0x40
+                    _LOGGER.info("[VERIFY] Status check - Light expected: %s, actual: %s (byte: 0x%02x)", 
+                                expected_on, light_on, control_byte)
+                    return light_on == expected_on
+            except Exception as e:
+                _LOGGER.debug("[VERIFY] Could not read status characteristic: %s", e)
+            
+            # Method 2: Try to read light control characteristic
+            try:
+                light_data = await self.client.read_gatt_char(CHAR_LIGHT_CONTROL)
+                if light_data:
+                    light_value = light_data[0] if light_data else 0
+                    light_on = light_value != 0
+                    _LOGGER.info("[VERIFY] Light control read - Expected: %s, actual: %s (value: 0x%02x)", 
+                                expected_on, light_on, light_value)
+                    return light_on == expected_on
+            except Exception as e:
+                _LOGGER.debug("[VERIFY] Could not read light control characteristic: %s", e)
+            
+            _LOGGER.warning("[VERIFY] Could not verify light status - no readable characteristics")
+            return False
+            
+        except Exception as e:
+            _LOGGER.error("[VERIFY] Error verifying light status: %s", e)
+            return False
+
     async def _disconnect(self) -> None:
         """Disconnect from device to allow iOS app access."""
         if self.client:
@@ -402,33 +470,57 @@ class ChromaComfortCoordinator(DataUpdateCoordinator):
                 _LOGGER.error("[COLOR] Error: %s", err)
 
     async def _try_fan_command(self, action: str, cmd1: bytes, cmd2: bytes) -> bool:
-        """Try different command formats for fan control."""
+        """Try different command formats for fan control and verify response."""
         commands_to_try = [("Simple", cmd1), ("Multi-byte", cmd2)]
+        expected_fan_state = (action == "ON")
         
         for desc, cmd in commands_to_try:
             _LOGGER.info("[FAN] Trying %s %s: %s", action, desc, cmd.hex())
             success = await self._write_characteristic_robust(CHAR_FAN_CONTROL, cmd)
             if success:
-                _LOGGER.info("[FAN] ✅ %s %s command succeeded", action, desc)
-                await asyncio.sleep(0.5)
-                return True
+                _LOGGER.info("[FAN] ✅ %s %s command sent successfully", action, desc)
+                
+                # Wait for device to process command
+                await asyncio.sleep(2)
+                
+                # Check if physical device responded by reading status
+                physical_response = await self._verify_fan_status(expected_fan_state)
+                if physical_response:
+                    _LOGGER.info("[FAN] ✅ Physical device responded - fan is %s", action)
+                    return True
+                else:
+                    _LOGGER.warning("[FAN] ⚠️ Command sent but physical device did not respond - fan still in wrong state")
+                    _LOGGER.info("[FAN] This indicates command byte 0x%s may be incorrect for %s", cmd.hex(), action)
+                    _LOGGER.info("[FAN] 💡 Suggestion: Try /development/mitm_proxy/test_fan_commands.py to find correct commands")
             else:
-                _LOGGER.debug("[FAN] ❌ %s %s command failed", action, desc)
+                _LOGGER.debug("[FAN] ❌ %s %s command failed to send", action, desc)
         
         return False
 
     async def _try_light_command(self, action: str, cmd1: bytes, cmd2: bytes) -> bool:
-        """Try different command formats for light control."""
+        """Try different command formats for light control and verify response."""
         commands_to_try = [("Simple", cmd1), ("Multi-byte", cmd2)]
+        expected_light_state = (action == "ON")
         
         for desc, cmd in commands_to_try:
             _LOGGER.info("[LIGHT] Trying %s %s: %s", action, desc, cmd.hex())
             success = await self._write_characteristic_robust(CHAR_LIGHT_CONTROL, cmd)
             if success:
-                _LOGGER.info("[LIGHT] ✅ %s %s command succeeded", action, desc)
-                await asyncio.sleep(0.5)
-                return True
+                _LOGGER.info("[LIGHT] ✅ %s %s command sent successfully", action, desc)
+                
+                # Wait for device to process command
+                await asyncio.sleep(2)
+                
+                # Check if physical device responded by reading status
+                physical_response = await self._verify_light_status(expected_light_state)
+                if physical_response:
+                    _LOGGER.info("[LIGHT] ✅ Physical device responded - light is %s", action)
+                    return True
+                else:
+                    _LOGGER.warning("[LIGHT] ⚠️ Command sent but physical device did not respond - light still in wrong state")
+                    _LOGGER.info("[LIGHT] This indicates command byte 0x%s may be incorrect for %s", cmd.hex(), action)
+                    _LOGGER.info("[LIGHT] 💡 Suggestion: Try /development/mitm_proxy/test_fan_commands.py to find correct commands")
             else:
-                _LOGGER.debug("[LIGHT] ❌ %s %s command failed", action, desc)
+                _LOGGER.debug("[LIGHT] ❌ %s %s command failed to send", action, desc)
         
         return False

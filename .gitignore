@@ -23,4 +23,9 @@ backups/
 # Claude Files
 .claude
 
+#Git Files
+.gitattributes
+.gitignore
+.gitmodules
+
 
