@@ -89,8 +89,23 @@ class ChromaComfortFan(CoordinatorEntity, FanEntity):
     @property
     def supported_features(self) -> FanEntityFeature:
         """Flag supported features."""
-        # Return FanEntityFeature object with SET_SPEED for percentage control
-        return FanEntityFeature.SET_SPEED
+        # Return FanEntityFeature object with TURN_ON, TURN_OFF, and SET_SPEED
+        # Some HA versions require explicit TURN_ON/TURN_OFF features
+        features = FanEntityFeature(0)  # Start with no features
+        
+        # Check which features are available in this HA version
+        if hasattr(FanEntityFeature, 'TURN_ON'):
+            features |= FanEntityFeature.TURN_ON
+        if hasattr(FanEntityFeature, 'TURN_OFF'):
+            features |= FanEntityFeature.TURN_OFF
+        if hasattr(FanEntityFeature, 'SET_SPEED'):
+            features |= FanEntityFeature.SET_SPEED
+            
+        # If no explicit turn on/off features, just return SET_SPEED
+        if features == FanEntityFeature(0):
+            return FanEntityFeature.SET_SPEED
+            
+        return features
     
 
     async def async_turn_on(
