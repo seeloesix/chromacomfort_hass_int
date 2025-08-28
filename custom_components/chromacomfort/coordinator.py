@@ -192,10 +192,28 @@ class ChromaComfortCoordinator(DataUpdateCoordinator):
             except Exception:
                 pass
             
-            # Step 2: Read control characteristics to establish session
+            # Step 2: Read control characteristics and check properties
             for char_uuid in [CHAR_FAN_CONTROL, CHAR_LIGHT_CONTROL, CHAR_COLOR_CONTROL]:
                 try:
-                    await self.client.read_gatt_char(char_uuid)
+                    # Read the characteristic
+                    data = await self.client.read_gatt_char(char_uuid)
+                    _LOGGER.debug("[SESSION] Read %s: %s", char_uuid, data.hex() if data else "No data")
+                    
+                    # Check characteristic properties for write capabilities
+                    try:
+                        services = self.client.services
+                        for service in services:
+                            for char in service.characteristics:
+                                if char.uuid.lower() == char_uuid.lower():
+                                    _LOGGER.debug("[SESSION] %s properties: %s", char_uuid, char.properties)
+                                    if "write" in char.properties:
+                                        _LOGGER.debug("[SESSION] %s supports write with response", char_uuid)
+                                    if "write-without-response" in char.properties:
+                                        _LOGGER.debug("[SESSION] %s supports write without response", char_uuid)
+                                    break
+                    except Exception as prop_err:
+                        _LOGGER.debug("[SESSION] Could not check properties for %s: %s", char_uuid, prop_err)
+                        
                 except Exception:
                     pass
             
@@ -210,6 +228,31 @@ class ChromaComfortCoordinator(DataUpdateCoordinator):
             
         except Exception as err:
             _LOGGER.warning("[SESSION] Session establishment incomplete: %s", err)
+
+    async def _write_characteristic_robust(self, char_uuid: str, data: bytes) -> bool:
+        """Robust write method that tries different approaches for DBus compatibility."""
+        write_methods = [
+            ("write without response", lambda: self.client.write_gatt_char(char_uuid, data, response=False)),
+            ("write with response", lambda: self.client.write_gatt_char(char_uuid, data, response=True)),
+            ("write default", lambda: self.client.write_gatt_char(char_uuid, data)),
+        ]
+        
+        for method_name, write_func in write_methods:
+            try:
+                await write_func()
+                _LOGGER.debug("[WRITE] Success using %s for %s: %s", method_name, char_uuid, data.hex())
+                return True
+            except Exception as e:
+                error_str = str(e)
+                if "DBus" in error_str or "WriteValue" in error_str:
+                    _LOGGER.debug("[WRITE] DBus issue with %s: %s", method_name, e)
+                elif "not connected" in error_str.lower():
+                    _LOGGER.warning("[WRITE] Connection lost during %s", method_name)
+                    break  # No point trying other methods if disconnected
+                else:
+                    _LOGGER.debug("[WRITE] %s failed: %s", method_name, e)
+        
+        return False
 
     async def _disconnect(self) -> None:
         """Disconnect from device to allow iOS app access."""
@@ -342,13 +385,13 @@ class ChromaComfortCoordinator(DataUpdateCoordinator):
                 r, g, b = rgb
                 if r == 0 and g == 0 and b == 0:
                     # Turn color off
-                    await self.client.write_gatt_char(CHAR_COLOR_CONTROL, COLOR_CMD_OFF)
-                    _LOGGER.debug("[COLOR] Sent OFF command")
+                    success = await self._write_characteristic_robust(CHAR_COLOR_CONTROL, COLOR_CMD_OFF)
+                    _LOGGER.info("[COLOR] Color OFF command %s", "succeeded" if success else "failed")
                 else:
                     # RGB command (format needs verification)
                     color_cmd = bytes([0x80, 0x25, r//10, g//10, b//10, 0x00])
-                    await self.client.write_gatt_char(CHAR_COLOR_CONTROL, color_cmd)
-                    _LOGGER.debug("[COLOR] Sent RGB command: %s", color_cmd.hex())
+                    success = await self._write_characteristic_robust(CHAR_COLOR_CONTROL, color_cmd)
+                    _LOGGER.info("[COLOR] RGB command (%s) %s", color_cmd.hex(), "succeeded" if success else "failed")
                 
                 self.data["rgb_color"] = rgb
                 
@@ -360,24 +403,32 @@ class ChromaComfortCoordinator(DataUpdateCoordinator):
 
     async def _try_fan_command(self, action: str, cmd1: bytes, cmd2: bytes) -> bool:
         """Try different command formats for fan control."""
-        for desc, cmd in [("Simple", cmd1), ("Multi-byte", cmd2)]:
-            try:
-                await self.client.write_gatt_char(CHAR_FAN_CONTROL, cmd, response=False)
-                _LOGGER.info("[FAN] %s command sent (%s): %s", action, desc, cmd.hex())
+        commands_to_try = [("Simple", cmd1), ("Multi-byte", cmd2)]
+        
+        for desc, cmd in commands_to_try:
+            _LOGGER.info("[FAN] Trying %s %s: %s", action, desc, cmd.hex())
+            success = await self._write_characteristic_robust(CHAR_FAN_CONTROL, cmd)
+            if success:
+                _LOGGER.info("[FAN] ✅ %s %s command succeeded", action, desc)
                 await asyncio.sleep(0.5)
                 return True
-            except Exception as e:
-                _LOGGER.debug("[FAN] %s %s failed: %s", action, desc, e)
+            else:
+                _LOGGER.debug("[FAN] ❌ %s %s command failed", action, desc)
+        
         return False
 
     async def _try_light_command(self, action: str, cmd1: bytes, cmd2: bytes) -> bool:
         """Try different command formats for light control."""
-        for desc, cmd in [("Simple", cmd1), ("Multi-byte", cmd2)]:
-            try:
-                await self.client.write_gatt_char(CHAR_LIGHT_CONTROL, cmd, response=False)
-                _LOGGER.info("[LIGHT] %s command sent (%s): %s", action, desc, cmd.hex())
+        commands_to_try = [("Simple", cmd1), ("Multi-byte", cmd2)]
+        
+        for desc, cmd in commands_to_try:
+            _LOGGER.info("[LIGHT] Trying %s %s: %s", action, desc, cmd.hex())
+            success = await self._write_characteristic_robust(CHAR_LIGHT_CONTROL, cmd)
+            if success:
+                _LOGGER.info("[LIGHT] ✅ %s %s command succeeded", action, desc)
                 await asyncio.sleep(0.5)
                 return True
-            except Exception as e:
-                _LOGGER.debug("[LIGHT] %s %s failed: %s", action, desc, e)
+            else:
+                _LOGGER.debug("[LIGHT] ❌ %s %s command failed", action, desc)
+        
         return False
