@@ -45,12 +45,19 @@ ChromaComfort/
 - `development/` - Tools used to create the integration (not needed)
 - `research/` - Reverse engineering documentation (not needed)
 
-## Clean Package
+## Current Status (2025-08-28)
 
-This package is now organized for:
+**Package Organization**: ✅ Complete
 - ✅ **End users**: Simple installation via HACS or manual
 - ✅ **HACS compatibility**: Proper structure and metadata
-- ✅ **Developers**: Tools and documentation preserved separately
-- ✅ **Research**: Complete reverse engineering process documented
+- ✅ **Integration Framework**: BLE connection, entities, UI working
+- ✅ **Developers**: Command testing tools available
+- ✅ **Research**: Comprehensive reverse engineering documentation
 
-The goal is achieved: **Easy ChromaComfort fan control via Home Assistant** without unnecessary complexity for end users.
+**Integration Status**: ⚠️ Command Verification Needed
+- ✅ **Discovery & Connection**: Fully functional
+- ✅ **Home Assistant Integration**: Entities created, UI responsive
+- ⚠️ **Physical Device Control**: Commands send but need verification
+- 🔄 **Command Testing**: Tools available in `/development/mitm_proxy/`
+
+**For Developers**: Use `/development/mitm_proxy/test_fan_commands.py` to verify and update command formats in `custom_components/chromacomfort/const.py`

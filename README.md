@@ -4,11 +4,14 @@ Home Assistant custom integration for controlling ChromaComfort Multi-Color LED 
 
 ## Features
 
-- ✅ **Fan Control**: Turn fan ON/OFF via Home Assistant
-- ✅ **Light Control**: Control built-in LED light ON/OFF
-- ✅ **Real-time Status**: Automatic state updates in Home Assistant
-- ✅ **Multi-device Support**: Control multiple ChromaComfort fans
-- ✅ **BLE Connection Management**: Automatic reconnection handling
+- ✅ **On-Demand Connection**: Connects only when sending commands, then auto-disconnects
+- ✅ **iOS App Compatible**: Doesn't lock out the iPhone app - seamless switching
+- ✅ **Bluetooth Discovery**: Auto-detects ChromaComfort fans by manufacturer ID
+- ✅ **Device Configuration**: Custom naming and room assignment during setup
+- ✅ **Smart Session Management**: Establishes control session like iOS app
+- ✅ **Always Available**: Entities stay available even when disconnected
+- ⚠️ **Fan/Light Control**: Framework complete, command verification needed
+- ✅ **Auto-Disconnect**: Frees device after 10 seconds of inactivity
 
 ## Supported Devices
 
@@ -163,15 +166,37 @@ automation:
 - Only one device can connect at a time (disconnect iOS app if connected)
 - Check Home Assistant Bluetooth monitor for devices with manufacturer ID 10
 
-### Commands Not Working
-- Check Home Assistant logs: `sudo journalctl -u home-assistant@homeassistant.service -f | grep -i chromacomfort`
+### Commands Not Working (Current Known Issue)
+⚠️ **Status**: BLE commands send successfully but may not affect physical device
+
+**Current Investigation**:
+- Integration framework is working correctly
+- BLE connection and session establishment successful
+- Commands appear to send without errors
+- Physical device response needs verification
+- Command byte format may need adjustment
+
+**Immediate Solutions**:
+- Check Home Assistant logs: `sudo journalctl -u home-assistant@homeassistant.service -f | grep chromacomfort`
 - Verify fan is within 30 feet of Home Assistant device
 - Restart integration: **Settings** → **Devices & Services** → **ChromaComfort** → **⋮** → **Reload**
+- Use iPhone app to verify device is responsive
 
-### Connection Issues
-- Only one device can connect to the fan at a time
-- If using iOS app, disconnect it before using Home Assistant
-- BLE connections may take a few seconds to establish
+**For Developers**: See `/development/mitm_proxy/test_fan_commands.py` for systematic command verification
+
+### Connection Model (Smart On-Demand)
+The integration uses an intelligent on-demand connection model:
+- **Connects automatically** when you send a command
+- **Disconnects after 10 seconds** to free the device
+- **iOS app friendly** - Switch between HA and iPhone app seamlessly
+- **Entities always available** - Ready for commands anytime
+- **No manual disconnect needed** - Automatic connection management
+
+### Connection Behavior
+- Commands trigger automatic connection
+- Device freed quickly for iOS app use
+- Status updates less frequent to avoid monopolizing
+- BLE connections take 2-5 seconds to establish
 
 ## Advanced Configuration
 
@@ -192,20 +217,44 @@ logger:
     custom_components.chromacomfort: debug
 ```
 
-## Current Limitations
+## Current Status (2025-08-28)
 
-- **Fan Speed Control**: Currently ON/OFF only (multi-speed support planned)
-- **Color Control**: Basic framework implemented (RGB control in development)
-- **Light Dimming**: Pattern identified (brightness control in development)
-- **iOS App Compatibility**: Cannot use simultaneously with Home Assistant
+### ✅ Working Components
+- **Bluetooth Discovery**: Reliable detection via manufacturer ID 10
+- **Device Configuration**: Custom naming and room assignment
+- **BLE Connection**: Stable connection with session management
+- **Entity Framework**: Fan and light entities appear in Home Assistant
+- **Status Monitoring**: Real-time status notifications working
+- **Error Handling**: Robust connection recovery and logging
 
-## Development Roadmap
+### ⚠️ Known Issues
+- **Physical Device Control**: Commands send but may not affect device hardware
+- **Command Verification**: Actual BLE write commands need physical testing
+- **iOS App Conflict**: Cannot use simultaneously with Home Assistant
 
-- 🔄 **Multi-speed Fan Control**: Low/Medium/High speed settings
-- 🔄 **RGB Color Control**: Full color wheel support
-- 🔄 **Light Dimming**: Brightness control (0-100%)
-- 🔄 **Timer Functions**: Scheduled ON/OFF functionality
-- 🔄 **Scene Support**: Predefined color/brightness scenes
+### 🔄 In Development
+- **Command Format Verification**: Testing actual device response
+- **Multi-speed Fan Control**: Requires command verification first
+- **RGB Color Control**: Framework ready, needs command testing
+- **Light Dimming**: Patterns identified, awaiting command verification
+
+## Development Status
+
+### Immediate Priority (Critical)
+1. **Command Verification**: Test actual BLE commands with physical device
+2. **Device Response Debugging**: Resolve commands-send-but-no-response issue
+3. **Command Format Validation**: Use test scripts in `/development/mitm_proxy/`
+
+### Next Phase (After Command Verification)
+1. **Multi-speed Fan Control**: Low/Medium/High speed settings
+2. **RGB Color Control**: Full color wheel support
+3. **Light Dimming**: Brightness control (0-100%)
+4. **Enhanced Status**: Decode all status notification patterns
+
+### Future Features
+1. **Timer Functions**: Scheduled ON/OFF functionality
+2. **Scene Support**: Predefined color/brightness scenes
+3. **Multi-device Optimization**: Improved handling of multiple fans
 
 ## Support
 

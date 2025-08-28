@@ -70,6 +70,9 @@ target:
   entity_id: fan.chromacomfort_fan
 ```
 
+**⚠️ Current Status (2025-08-28)**: 
+Commands may send successfully but not affect physical device. This is a known issue under investigation. The integration framework is working correctly, but command bytes need verification through physical device testing.
+
 ## Troubleshooting
 
 ### Fan Not Found
@@ -77,15 +80,35 @@ target:
 - Disconnect iOS app from fan
 - Check Bluetooth: `sudo systemctl status bluetooth`
 
+### Known Issues (2025-08-28)
+**Commands Send But No Physical Response**:
+- Integration entities appear and respond in Home Assistant UI
+- BLE connection successful, status notifications working
+- Commands send without errors but device doesn't respond physically
+- **Cause**: Command byte format needs verification
+- **Solution**: Physical device testing in progress
+
+**Workarounds**:
+- Use iPhone app to verify device functionality
+- Check Home Assistant logs for BLE connection status
+- Integration framework ready for command updates
+
 ### Integration Errors  
 - Check logs: **Settings** → **System** → **Logs**
-- Look for "chromacomfort" entries
+- Look for "chromacomfort" entries with [BLE], [FAN], [LIGHT] prefixes
+- Enable debug logging: Add to `configuration.yaml`:
+  ```yaml
+  logger:
+    logs:
+      custom_components.chromacomfort: debug
+  ```
 - Restart integration if needed
 
 ### Connection Issues
 - Only one device can connect at a time
 - BLE connections may take 5-10 seconds
 - Keep fan within 30 feet of Home Assistant
+- Status notifications should stream if connected properly
 
 ## Support
 
