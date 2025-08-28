@@ -6,6 +6,7 @@ __pycache__/
 # Development files
 development/
 research/
+backups/
 
 # IDE files
 .vscode/
@@ -22,6 +23,4 @@ research/
 # Claude Files
 .claude
 
-#backup files
-backup_*
 
