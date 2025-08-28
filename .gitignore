@@ -23,5 +23,5 @@ research/
 .claude
 
 #backup files
-backup*
+backup_*
 
