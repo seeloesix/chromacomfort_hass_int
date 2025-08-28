@@ -16,12 +16,21 @@ CHAR_DEVICE_STATUS: Final = "00001014-d102-11e1-9b23-00025b00a5a5"  # Device sta
 # Discovered BLE Command Patterns (from GATT capture analysis)
 
 # Fan Control Commands (write to CHAR_FAN_CONTROL)
-FAN_CMD_OFF: Final = bytes([0x00])  # Fan OFF command
-FAN_CMD_ON: Final = bytes([0x01])   # Fan ON command (basic speed)
+# Based on logs showing successful sends but no device response, trying different formats
+FAN_CMD_OFF: Final = bytes([0x00])  # Simple format - Fan OFF
+FAN_CMD_ON: Final = bytes([0x01])   # Simple format - Fan ON
+
+# Alternative formats to test (inspired by color control pattern)
+FAN_CMD_OFF_ALT: Final = bytes([0x80, 0x25, 0x00, 0x00, 0x00, 0x00])  # Multi-byte format
+FAN_CMD_ON_ALT: Final = bytes([0x80, 0x25, 0x01, 0x00, 0x00, 0x00])   # Multi-byte format
 
 # Light Control Commands (write to CHAR_LIGHT_CONTROL) 
-LIGHT_CMD_OFF: Final = bytes([0x00])  # Light OFF
-LIGHT_CMD_ON: Final = bytes([0x01])   # Light ON (white)
+LIGHT_CMD_OFF: Final = bytes([0x00])  # Simple format - Light OFF
+LIGHT_CMD_ON: Final = bytes([0x01])   # Simple format - Light ON
+
+# Alternative formats to test
+LIGHT_CMD_OFF_ALT: Final = bytes([0x80, 0x25, 0x00, 0x00, 0x00, 0x00])  # Multi-byte format  
+LIGHT_CMD_ON_ALT: Final = bytes([0x80, 0x25, 0x01, 0x00, 0x00, 0x00])   # Multi-byte format
 
 # Color Control Commands (write to CHAR_COLOR_CONTROL - 6 bytes)
 COLOR_CMD_OFF: Final = bytes([0x80, 0x25, 0x00, 0x00, 0x00, 0x00])  # Color OFF (initial state)

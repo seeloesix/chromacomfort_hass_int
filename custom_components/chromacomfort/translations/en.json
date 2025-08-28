@@ -10,10 +10,14 @@
       },
       "bluetooth_confirm": {
         "title": "Configure ChromaComfort Fan",
-        "description": "Customize the name and room for {name}.",
+        "description": "**Device Found:**\n\n• Model: {model}\n• Manufacturer: {manufacturer}\n• Address: {address}\n\nCustomize the name and select a room for this device.",
         "data": {
           "name": "Device Name",
-          "room": "Room"
+          "room": "Room / Area"
+        },
+        "data_description": {
+          "name": "Enter a custom name for this fan",
+          "room": "Select which room this fan is located in (No Room is default)"
         }
       }
     },

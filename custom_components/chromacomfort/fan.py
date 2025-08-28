@@ -87,9 +87,10 @@ class ChromaComfortFan(CoordinatorEntity, FanEntity):
         return len(ORDERED_NAMED_FAN_SPEEDS)
     
     @property
-    def supported_features(self) -> int:
+    def supported_features(self) -> FanEntityFeature:
         """Flag supported features."""
-        return 0  # Basic fan with percentage control (auto-detected from methods)
+        # Return FanEntityFeature object with SET_SPEED for percentage control
+        return FanEntityFeature.SET_SPEED
     
 
     async def async_turn_on(

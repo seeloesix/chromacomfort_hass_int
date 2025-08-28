@@ -43,26 +43,39 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         
         self._discovered_device = discovery_info
         
+        # Go to confirmation step to let user configure the device
         return await self.async_step_bluetooth_confirm()
 
     async def async_step_bluetooth_confirm(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Confirm and configure discovered device."""
+        """Configure the discovered device."""
         errors = {}
         
         if user_input is not None:
             # Get the device address
             address = self._discovered_device.address
             device_name = user_input.get(CONF_NAME) or (self._discovered_device.name or "ChromaComfort Fan")
+            room = user_input.get("room")
             
+            # Set unique ID to prevent duplicates
+            await self.async_set_unique_id(address)
+            self._abort_if_unique_id_configured()
+            
+            # Create the config entry with device area if specified
+            entry_data = {
+                CONF_ADDRESS: address,
+                CONF_NAME: device_name,
+            }
+            
+            # Add room if specified and not "none"
+            if room and room != "none":
+                entry_data["room"] = room
+            
+            # Create config entry
             return self.async_create_entry(
                 title=device_name,
-                data={
-                    CONF_ADDRESS: address,
-                    CONF_NAME: device_name,
-                    "room": user_input.get("room"),
-                },
+                data=entry_data,
             )
         
         # Get room list from Home Assistant areas
@@ -81,12 +94,14 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 "bathroom": "Bathroom",
                 "kitchen": "Kitchen",
                 "office": "Office",
-                "none": "No Room",
             }
-        else:
-            areas["none"] = "No Room"
         
+        # Always add "No Room" as default
+        areas["none"] = "No Room"
+        
+        # Get device information for display
         default_name = self._discovered_device.name or "ChromaComfort Fan"
+        device_address = self._discovered_device.address
         
         return self.async_show_form(
             step_id="bluetooth_confirm",
@@ -96,7 +111,10 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             }),
             errors=errors,
             description_placeholders={
-                "name": default_name
+                "name": default_name,
+                "address": device_address,
+                "manufacturer": "GooWi Technology",
+                "model": "Multi-Color LED Ventilation Fan",
             },
         )
 
@@ -111,11 +129,10 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 await self.async_set_unique_id(user_input[CONF_ADDRESS])
                 self._abort_if_unique_id_configured()
                 
-                # Store selected device info and proceed to configuration
+                # Store selected device and go to configuration step
                 selected_device = self._discovered_devices[user_input[CONF_ADDRESS]]
-                self.context["selected_device"] = user_input[CONF_ADDRESS]
-                self.context["device_name"] = selected_device.name or "ChromaComfort Fan"
                 self._discovered_device = selected_device
+                
                 return await self.async_step_bluetooth_confirm()
         
         # Get devices discovered by Home Assistant's Bluetooth integration
