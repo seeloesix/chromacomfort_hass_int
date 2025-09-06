@@ -182,50 +182,55 @@ class ChromaComfortCoordinator(DataUpdateCoordinator):
             raise
 
     async def _establish_control_session(self) -> None:
-        """Establish control session with device - mimics iOS app workflow."""
+        """Establish control session with device - proper handshake."""
         _LOGGER.debug("[SESSION] Establishing control session")
-        
+
         try:
-            # Step 1: Read device status to announce presence
+            # Step 1: Read characteristics that allow reading
             try:
-                await self.client.read_gatt_char(CHAR_DEVICE_STATUS)
-            except Exception:
-                pass
-            
-            # Step 2: Read control characteristics and check properties
-            for char_uuid in [CHAR_FAN_CONTROL, CHAR_LIGHT_CONTROL, CHAR_COLOR_CONTROL]:
-                try:
-                    # Read the characteristic
-                    data = await self.client.read_gatt_char(char_uuid)
-                    _LOGGER.debug("[SESSION] Read %s: %s", char_uuid, data.hex() if data else "No data")
-                    
-                    # Check characteristic properties for write capabilities
-                    try:
-                        services = self.client.services
-                        for service in services:
-                            for char in service.characteristics:
-                                if char.uuid.lower() == char_uuid.lower():
-                                    _LOGGER.debug("[SESSION] %s properties: %s", char_uuid, char.properties)
-                                    if "write" in char.properties:
-                                        _LOGGER.debug("[SESSION] %s supports write with response", char_uuid)
-                                    if "write-without-response" in char.properties:
-                                        _LOGGER.debug("[SESSION] %s supports write without response", char_uuid)
-                                    break
-                    except Exception as prop_err:
-                        _LOGGER.debug("[SESSION] Could not check properties for %s: %s", char_uuid, prop_err)
-                        
-                except Exception:
-                    pass
-            
-            # Step 3: Subscribe to status notifications if possible
+                # Light Control - readable
+                light_state = await self.client.read_gatt_char(CHAR_LIGHT_CONTROL)
+                _LOGGER.debug("[SESSION] Light state: %s", light_state.hex() if light_state else "empty")
+
+                # Color Control - readable  
+                color_state = await self.client.read_gatt_char(CHAR_COLOR_CONTROL)
+                _LOGGER.debug("[SESSION] Color state: %s", color_state.hex() if color_state else "empty")
+            except Exception as e:
+                _LOGGER.debug("[SESSION] Read characteristics: %s", e)
+
+            # Step 2: Initialize Fan Control with a write (not read!)
+            # This likely establishes permission/session
+            try:
+                # Send neutral/query command to fan control
+                init_cmd = bytes([0x00])  # or could be a "get status" command
+                await self.client.write_gatt_char(CHAR_FAN_CONTROL, init_cmd, response=False)
+                _LOGGER.debug("[SESSION] Fan control initialized")
+            except Exception as e:
+                _LOGGER.debug("[SESSION] Fan init failed: %s", e)
+
+            # Step 3: Subscribe to notifications
             try:
                 await self.client.start_notify(CHAR_DEVICE_STATUS, self._handle_status_notification)
-                _LOGGER.debug("[SESSION] Subscribed to status notifications")
-            except Exception:
-                _LOGGER.debug("[SESSION] Could not subscribe to notifications")
-            
+                _LOGGER.debug("[SESSION] Status notifications subscribed")
+            except Exception as e:
+                _LOGGER.debug("[SESSION] Notification subscription failed: %s", e)
+
+            # Step 4: Wait for device acknowledgment
+            await asyncio.sleep(2)
+
+            # Step 5: Try to read status after initialization
+            try:
+                status = await self.client.read_gatt_char(CHAR_DEVICE_STATUS)
+                if status:
+                    _LOGGER.info("[SESSION] Device acknowledged - status: %s", status.hex())
+                    self._handle_status_notification(None, status)
+                else:
+                    _LOGGER.debug("[SESSION] Status still empty after initialization")
+            except Exception as e:
+                _LOGGER.debug("[SESSION] Post-init status read failed: %s", e)
+
             _LOGGER.info("[SESSION] Control session established")
-            
+
         except Exception as err:
             _LOGGER.warning("[SESSION] Session establishment incomplete: %s", err)
 
