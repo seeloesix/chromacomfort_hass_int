@@ -18,9 +18,9 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
-    DOMAIN, 
-    MANUFACTURER, 
-    MODEL, 
+    DOMAIN,
+    MANUFACTURER,
+    MODEL,
     UPDATE_INTERVAL,
     CHAR_FAN_CONTROL,
     CHAR_LIGHT_CONTROL,
@@ -35,6 +35,8 @@ from .const import (
     LIGHT_CMD_OFF_ALT,
     LIGHT_CMD_ON_ALT,
     COLOR_CMD_OFF,
+    STATUS_AUTH_ENABLED,
+    STATUS_BYTES_LENGTH,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -234,6 +236,33 @@ class ChromaComfortCoordinator(DataUpdateCoordinator):
         except Exception as err:
             _LOGGER.warning("[SESSION] Session establishment incomplete: %s", err)
 
+    async def _get_status_for_auth(self) -> bytes | None:
+        """Get current device status for authentication"""
+        try:
+            status = await self.client.read_gatt_char(CHAR_DEVICE_STATUS)
+            if status and len(status) >= STATUS_BYTES_LENGTH:
+                return status[:STATUS_BYTES_LENGTH]
+            return None
+        except Exception as e:
+            _LOGGER.debug("[AUTH] Could not read status for auth: %s", e)
+            return None
+
+    async def _create_authenticated_command(self, command: bytes) -> bytes:
+        """Create authenticated command using current device status"""
+        if not STATUS_AUTH_ENABLED:
+            return command
+
+        status = await self._get_status_for_auth()
+        if status:
+            # Prepend status bytes to command for authentication
+            auth_cmd = status + command
+            _LOGGER.debug("[AUTH] Auth command: %s (status: %s + cmd: %s)",
+                         auth_cmd.hex(), status.hex(), command.hex())
+            return auth_cmd
+        else:
+            _LOGGER.debug("[AUTH] No status available, sending raw command")
+            return command
+
     async def _write_characteristic_robust(self, char_uuid: str, data: bytes) -> bool:
         """Robust write method that tries different approaches for DBus compatibility."""
         write_methods = [
@@ -387,30 +416,30 @@ class ChromaComfortCoordinator(DataUpdateCoordinator):
         async with self._lock:
             await self._disconnect()
 
-    async def set_fan_speed(self, speed: int) -> None:
-        """Set the fan speed (0=off, 1+=on)."""
+    async def set_fan_state(self, state: bool) -> None:
+        """Set the fan state (single speed on/off only)."""
         async with self._lock:
             try:
                 # Connect on-demand for command
                 await self._connect()
-                
-                old_speed = self.data["fan_speed"]
-                self.data["fan_speed"] = speed
-                
+
+                old_state = self.data.get("fan_state", False)
+                self.data["fan_state"] = state
+
                 # Send appropriate command
-                if speed == 0:
-                    success = await self._try_fan_command("OFF", FAN_CMD_OFF, FAN_CMD_OFF_ALT)
-                else:
+                if state:
                     success = await self._try_fan_command("ON", FAN_CMD_ON, FAN_CMD_ON_ALT)
-                
+                else:
+                    success = await self._try_fan_command("OFF", FAN_CMD_OFF, FAN_CMD_OFF_ALT)
+
                 if not success:
                     # Revert if command failed
-                    self.data["fan_speed"] = old_speed
+                    self.data["fan_state"] = old_state
                     _LOGGER.error("[FAN] Command failed")
-                
+
                 # Reset disconnect timer after command
                 self._reset_disconnect_timer()
-                
+
             except Exception as err:
                 _LOGGER.error("[FAN] Error: %s", err)
 
@@ -476,18 +505,20 @@ class ChromaComfortCoordinator(DataUpdateCoordinator):
 
     async def _try_fan_command(self, action: str, cmd1: bytes, cmd2: bytes) -> bool:
         """Try different command formats for fan control and verify response."""
-        commands_to_try = [("Simple", cmd1), ("Multi-byte", cmd2)]
+        commands_to_try = [("UART", cmd1), ("UART-Alt", cmd2)]
         expected_fan_state = (action == "ON")
-        
+
         for desc, cmd in commands_to_try:
-            _LOGGER.info("[FAN] Trying %s %s: %s", action, desc, cmd.hex())
-            success = await self._write_characteristic_robust(CHAR_FAN_CONTROL, cmd)
+            # Create authenticated command
+            auth_cmd = await self._create_authenticated_command(cmd)
+            _LOGGER.info("[FAN] Trying %s %s: %s", action, desc, auth_cmd.hex())
+            success = await self._write_characteristic_robust(CHAR_FAN_CONTROL, auth_cmd)
             if success:
                 _LOGGER.info("[FAN] ✅ %s %s command sent successfully", action, desc)
-                
+
                 # Wait for device to process command
                 await asyncio.sleep(2)
-                
+
                 # Check if physical device responded by reading status
                 physical_response = await self._verify_fan_status(expected_fan_state)
                 if physical_response:
@@ -495,27 +526,29 @@ class ChromaComfortCoordinator(DataUpdateCoordinator):
                     return True
                 else:
                     _LOGGER.warning("[FAN] ⚠️ Command sent but physical device did not respond - fan still in wrong state")
-                    _LOGGER.info("[FAN] This indicates command byte 0x%s may be incorrect for %s", cmd.hex(), action)
-                    _LOGGER.info("[FAN] 💡 Suggestion: Try /development/mitm_proxy/test_fan_commands.py to find correct commands")
+                    _LOGGER.info("[FAN] This indicates command format may be incorrect")
+                    _LOGGER.info("[FAN] 💡 Try: python3 /development/mitm_proxy/test_fan_commands.py")
             else:
                 _LOGGER.debug("[FAN] ❌ %s %s command failed to send", action, desc)
-        
+
         return False
 
     async def _try_light_command(self, action: str, cmd1: bytes, cmd2: bytes) -> bool:
         """Try different command formats for light control and verify response."""
-        commands_to_try = [("Simple", cmd1), ("Multi-byte", cmd2)]
+        commands_to_try = [("UART", cmd1), ("UART-Alt", cmd2)]
         expected_light_state = (action == "ON")
-        
+
         for desc, cmd in commands_to_try:
-            _LOGGER.info("[LIGHT] Trying %s %s: %s", action, desc, cmd.hex())
-            success = await self._write_characteristic_robust(CHAR_LIGHT_CONTROL, cmd)
+            # Create authenticated command
+            auth_cmd = await self._create_authenticated_command(cmd)
+            _LOGGER.info("[LIGHT] Trying %s %s: %s", action, desc, auth_cmd.hex())
+            success = await self._write_characteristic_robust(CHAR_LIGHT_CONTROL, auth_cmd)
             if success:
                 _LOGGER.info("[LIGHT] ✅ %s %s command sent successfully", action, desc)
-                
+
                 # Wait for device to process command
                 await asyncio.sleep(2)
-                
+
                 # Check if physical device responded by reading status
                 physical_response = await self._verify_light_status(expected_light_state)
                 if physical_response:
@@ -523,9 +556,9 @@ class ChromaComfortCoordinator(DataUpdateCoordinator):
                     return True
                 else:
                     _LOGGER.warning("[LIGHT] ⚠️ Command sent but physical device did not respond - light still in wrong state")
-                    _LOGGER.info("[LIGHT] This indicates command byte 0x%s may be incorrect for %s", cmd.hex(), action)
-                    _LOGGER.info("[LIGHT] 💡 Suggestion: Try /development/mitm_proxy/test_fan_commands.py to find correct commands")
+                    _LOGGER.info("[LIGHT] This indicates command format may be incorrect")
+                    _LOGGER.info("[LIGHT] 💡 Try: python3 /development/mitm_proxy/test_fan_commands.py")
             else:
                 _LOGGER.debug("[LIGHT] ❌ %s %s command failed to send", action, desc)
-        
+
         return False
