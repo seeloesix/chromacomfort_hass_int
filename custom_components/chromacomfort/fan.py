@@ -10,17 +10,11 @@ from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.util.percentage import (
-    ordered_list_item_to_percentage,
-    percentage_to_ordered_list_item,
-)
 
-from .const import DOMAIN, FAN_SPEED_HIGH, FAN_SPEED_LOW, FAN_SPEED_MEDIUM, FAN_SPEED_OFF
+from .const import DOMAIN
 from .coordinator import ChromaComfortCoordinator
 
 _LOGGER = logging.getLogger(__name__)
-
-ORDERED_NAMED_FAN_SPEEDS = [FAN_SPEED_LOW, FAN_SPEED_MEDIUM, FAN_SPEED_HIGH]
 
 
 async def async_setup_entry(
@@ -42,13 +36,12 @@ async def async_setup_entry(
 
 
 class ChromaComfortFan(CoordinatorEntity, FanEntity):
-    """Representation of a ChromaComfort fan."""
+    """Representation of a ChromaComfort fan (single speed on/off only)."""
 
     _attr_has_entity_name = True
     _attr_name = "Fan"
     _attr_should_poll = False  # We use coordinator for updates
     _attr_icon = "mdi:fan"  # Fan icon
-    
 
     def __init__(
         self,
@@ -59,54 +52,32 @@ class ChromaComfortFan(CoordinatorEntity, FanEntity):
         super().__init__(coordinator)
         self._attr_unique_id = f"{entry.entry_id}_fan"
         self._attr_device_info = coordinator.device_info
-        # Explicitly set that we support turning on/off and percentage control
-        # Don't set _attr_supported_features to avoid compatibility issues
 
     @property
     def available(self) -> bool:
         """Return True if entity is available."""
         # Always return True to keep entity responsive even if BLE disconnected
         return True
-    
+
     @property
     def is_on(self) -> bool:
         """Return true if the fan is on."""
-        return self.coordinator.data.get("fan_speed", FAN_SPEED_OFF) != FAN_SPEED_OFF
+        return self.coordinator.data.get("fan_state", False)
 
-    @property
-    def percentage(self) -> int | None:
-        """Return the current speed percentage."""
-        speed = self.coordinator.data.get("fan_speed", FAN_SPEED_OFF)
-        if speed == FAN_SPEED_OFF:
-            return 0
-        return ordered_list_item_to_percentage(ORDERED_NAMED_FAN_SPEEDS, speed)
-
-    @property
-    def speed_count(self) -> int:
-        """Return the number of speeds the fan supports."""
-        return len(ORDERED_NAMED_FAN_SPEEDS)
-    
     @property
     def supported_features(self) -> FanEntityFeature:
         """Flag supported features."""
-        # Return FanEntityFeature object with TURN_ON, TURN_OFF, and SET_SPEED
-        # Some HA versions require explicit TURN_ON/TURN_OFF features
-        features = FanEntityFeature(0)  # Start with no features
-        
+        # Only support basic on/off for single speed fan
+        features = FanEntityFeature(0)
+
         # Check which features are available in this HA version
         if hasattr(FanEntityFeature, 'TURN_ON'):
             features |= FanEntityFeature.TURN_ON
         if hasattr(FanEntityFeature, 'TURN_OFF'):
             features |= FanEntityFeature.TURN_OFF
-        if hasattr(FanEntityFeature, 'SET_SPEED'):
-            features |= FanEntityFeature.SET_SPEED
-            
-        # If no explicit turn on/off features, just return SET_SPEED
-        if features == FanEntityFeature(0):
-            return FanEntityFeature.SET_SPEED
-            
+
+        # If no explicit turn on/off features, return 0 (no special features)
         return features
-    
 
     async def async_turn_on(
         self,
@@ -114,14 +85,10 @@ class ChromaComfortFan(CoordinatorEntity, FanEntity):
         preset_mode: str | None = None,
         **kwargs: Any,
     ) -> None:
-        """Turn on the fan."""
+        """Turn on the fan (single speed only)."""
         try:
-            if percentage is None:
-                # Default to medium speed
-                await self.coordinator.set_fan_speed(FAN_SPEED_MEDIUM)
-            else:
-                speed = percentage_to_ordered_list_item(ORDERED_NAMED_FAN_SPEEDS, percentage)
-                await self.coordinator.set_fan_speed(speed)
+            await self.coordinator.set_fan_state(True)
+            _LOGGER.info("Fan turned on")
         except Exception as err:
             _LOGGER.error("Failed to turn on fan %s: %s", self.entity_id, err)
             # Don't re-raise to keep the entity responsive
@@ -129,41 +96,11 @@ class ChromaComfortFan(CoordinatorEntity, FanEntity):
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off the fan."""
         try:
-            await self.coordinator.set_fan_speed(FAN_SPEED_OFF)
+            await self.coordinator.set_fan_state(False)
+            _LOGGER.info("Fan turned off")
         except Exception as err:
             _LOGGER.error("Failed to turn off fan %s: %s", self.entity_id, err)
             # Don't re-raise to keep the entity responsive
 
-    async def async_set_percentage(self, percentage: int) -> None:
-        """Set the speed percentage of the fan."""
-        if percentage == 0:
-            await self.async_turn_off()
-        else:
-            speed = percentage_to_ordered_list_item(ORDERED_NAMED_FAN_SPEEDS, percentage)
-            await self.coordinator.set_fan_speed(speed)
-    
-    def turn_on(self, **kwargs) -> None:
-        """Turn on the fan (sync wrapper)."""
-        # Home Assistant should call async_turn_on, but some versions may look for this
-        import asyncio
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                asyncio.create_task(self.async_turn_on(**kwargs))
-            else:
-                asyncio.run(self.async_turn_on(**kwargs))
-        except Exception:
-            pass  # Fail silently as this is just a compatibility shim
-    
-    def turn_off(self, **kwargs) -> None:
-        """Turn off the fan (sync wrapper)."""
-        # Home Assistant should call async_turn_off, but some versions may look for this
-        import asyncio
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                asyncio.create_task(self.async_turn_off(**kwargs))
-            else:
-                asyncio.run(self.async_turn_off(**kwargs))
-        except Exception:
-            pass  # Fail silently as this is just a compatibility shim
+    # Note: No async_set_percentage method needed since it's single speed
+    # The fan entity will automatically handle percentage=0 as turn_off
