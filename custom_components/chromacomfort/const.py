@@ -7,6 +7,11 @@ DOMAIN: Final = "chromacomfort"
 MANUFACTURER: Final = "GooWi Technology Co., Ltd."
 MODEL: Final = "ChromaComfort Multi-Color LED Ventilation Fan"
 
+# BLE Pairing Configuration
+DEFAULT_PIN_CODE: Final = "1234"  # Default Bluetooth pairing PIN for ChromaComfort devices
+PAIRING_TIMEOUT: Final = 30  # Seconds to wait for pairing to complete
+CONNECTION_TIMEOUT: Final = 15  # Seconds to wait for BLE connection
+
 # Bluetooth characteristics (discovered from ChromaComfort fan)
 CHAR_FAN_CONTROL: Final = "00001018-d102-11e1-9b23-00025b00a5a5"  # Fan speed control
 CHAR_LIGHT_CONTROL: Final = "00001013-d102-11e1-9b23-00025b00a5a5"  # Light on/off control  
@@ -14,46 +19,35 @@ CHAR_COLOR_CONTROL: Final = "bb8a27e1-c37c-11e3-b954-0228ac012a70"  # RGB color 
 CHAR_DEVICE_STATUS: Final = "00001014-d102-11e1-9b23-00025b00a5a5"  # Device status notifications
 
 # Discovered BLE Command Patterns (from GATT capture analysis)
-
-# UART Command Formats (GWLE1010B Module - Primary)
-# Format: [Start][Command ID][Data][Checksum/End]
-# Based on GWLE1010B datasheet and UART interface analysis
+# Based on reverse engineering from CHROMAFI_COMMANDS_DISCOVERED.md
 
 # Fan Control Commands (write to CHAR_FAN_CONTROL)
-FAN_CMD_OFF: Final = bytes([0xAA, 0x01, 0x00, 0xBB])  # UART format: Start + Cmd + Data + End
-FAN_CMD_ON: Final = bytes([0xAA, 0x01, 0x01, 0xBB])   # UART format: Start + Cmd + Data + End
+# Simple single-byte commands confirmed from GATT analysis
+FAN_CMD_OFF: Final = bytes([0x00])  # Turn fan off
+FAN_CMD_ON: Final = bytes([0x01])   # Turn fan on
 
-# Alternative UART formats to test
-FAN_CMD_OFF_ALT: Final = bytes([0x55, 0x01, 0x00, 0xAA])  # Alternative start/end bytes
-FAN_CMD_ON_ALT: Final = bytes([0x55, 0x01, 0x01, 0xAA])   # Alternative start/end bytes
+# Alternative fan commands to try if simple bytes don't work
+FAN_CMD_OFF_ALT: Final = bytes([0xAA, 0x01, 0x00, 0xBB])  # UART format fallback
+FAN_CMD_ON_ALT: Final = bytes([0xAA, 0x01, 0x01, 0xBB])   # UART format fallback
 
 # Light Control Commands (write to CHAR_LIGHT_CONTROL)
-LIGHT_CMD_OFF: Final = bytes([0xAA, 0x02, 0x00, 0xBB])  # Different command ID for light
-LIGHT_CMD_ON: Final = bytes([0xAA, 0x02, 0x01, 0xBB])   # Different command ID for light
+# Simple single-byte commands confirmed from GATT analysis
+LIGHT_CMD_OFF: Final = bytes([0x00])  # Turn light off
+LIGHT_CMD_ON: Final = bytes([0x01])   # Turn light on (white)
 
-# Alternative light UART formats
-LIGHT_CMD_OFF_ALT: Final = bytes([0x55, 0x02, 0x00, 0xAA])  # Alternative format
-LIGHT_CMD_ON_ALT: Final = bytes([0x55, 0x02, 0x01, 0xAA])   # Alternative format
+# Alternative light commands to try if simple bytes don't work
+LIGHT_CMD_OFF_ALT: Final = bytes([0xAA, 0x02, 0x00, 0xBB])  # UART format fallback
+LIGHT_CMD_ON_ALT: Final = bytes([0xAA, 0x02, 0x01, 0xBB])   # UART format fallback
 
-# Color Control Commands (write to CHAR_COLOR_CONTROL - 6 bytes UART format)
-COLOR_CMD_OFF: Final = bytes([0xAA, 0x03, 0x00, 0x00, 0x00, 0xBB])  # UART RGB format
-COLOR_CMD_RED: Final = bytes([0xAA, 0x03, 0xFF, 0x00, 0x00, 0xBB])  # Red
-COLOR_CMD_GREEN: Final = bytes([0xAA, 0x03, 0x00, 0xFF, 0x00, 0xBB])  # Green
-COLOR_CMD_BLUE: Final = bytes([0xAA, 0x03, 0x00, 0x00, 0xFF, 0xBB])  # Blue
-COLOR_CMD_WHITE: Final = bytes([0xAA, 0x03, 0xFF, 0xFF, 0xFF, 0xBB])  # White
+# Color Control Commands (write to CHAR_COLOR_CONTROL - 6 bytes)
+# Format discovered: 80 25 XX XX XX XX (color mode)
+COLOR_CMD_OFF: Final = bytes([0x80, 0x25, 0x00, 0x00, 0x00, 0x00])  # Color mode off
 
-# Alternative Color Commands (4 bytes RGB + Brightness - for testing)
-COLOR_CMD_OFF_ALT: Final = bytes([0x00, 0x00, 0x00, 0x00])  # RGB + Brightness off
-COLOR_CMD_RED_ALT: Final = bytes([0xFF, 0x00, 0x00, 0xFF])  # Red with max brightness
-COLOR_CMD_GREEN_ALT: Final = bytes([0x00, 0xFF, 0x00, 0xFF])  # Green with max brightness
-COLOR_CMD_BLUE_ALT: Final = bytes([0x00, 0x00, 0xFF, 0xFF])  # Blue with max brightness
-COLOR_CMD_WHITE_ALT: Final = bytes([0xFF, 0xFF, 0xFF, 0xFF])  # White with max brightness
-
-# Legacy Raw Commands (Fallback - for testing compatibility)
-FAN_CMD_OFF_RAW: Final = bytes([0x00])  # Original raw format
-FAN_CMD_ON_RAW: Final = bytes([0x01])   # Original raw format
-LIGHT_CMD_OFF_RAW: Final = bytes([0x00])  # Original raw format
-LIGHT_CMD_ON_RAW: Final = bytes([0x01])   # Original raw format
+# Color presets (need verification)
+COLOR_CMD_RED: Final = bytes([0x80, 0x25, 0xFF, 0x00, 0x00, 0x00])
+COLOR_CMD_GREEN: Final = bytes([0x80, 0x25, 0x00, 0xFF, 0x00, 0x00])
+COLOR_CMD_BLUE: Final = bytes([0x80, 0x25, 0x00, 0x00, 0xFF, 0x00])
+COLOR_CMD_WHITE: Final = bytes([0x80, 0x25, 0xFF, 0xFF, 0xFF, 0x00])
 
 # Status-based Authentication Constants
 STATUS_AUTH_ENABLED: Final = True  # Enable status-based authentication
