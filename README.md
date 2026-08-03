@@ -1,219 +1,126 @@
-# ChromaComfort - Home Assistant Integration
+# ChromaComfort for Home Assistant
 
-Home Assistant custom integration for controlling ChromaComfort Multi-Color LED Ventilation Fans via Bluetooth Low Energy (BLE).
+Local Bluetooth control of **Broan-NuTone ChromaComfort** bathroom exhaust fans.
+No cloud, no vendor app, no account — Home Assistant talks straight to the fan
+over BLE.
 
-## Features
+[![hacs][hacs-badge]][hacs]
 
-- **Bluetooth Discovery**: Auto-detects ChromaComfort fans by manufacturer ID
-- **On-Demand Connection**: Connects when you control the device, disconnects when idle
-- **iOS App Compatible**: Doesn't monopolize the device - switch between HA and iPhone app
-- **Fan Control**: Turn fan on/off
-- **Light Control**: Turn light on/off with RGB color support
-- **Auto-Disconnect**: Frees device after 10 seconds of inactivity
-- **Always Available**: Entities stay responsive even when disconnected
+## What you get
 
-## Supported Devices
+Each fan appears as one device with four entities:
 
-- **ChromaComfort Multi-Color LED Ventilation Fan**
-  - Manufacturer: GooWi Technology Co., Ltd.
-  - Manufacturer ID: 10 (0x0A)
-  - Default Pairing PIN: **1234**
-  - Connection: Bluetooth Low Energy (BLE)
-  - Service UUID: a08f7710-c37c-11e3-99cc-0228ac012a70
+| Entity | Type | Capabilities |
+|---|---|---|
+| Fan | `fan` | on / off (the unit is single-speed) |
+| Light | `light` | on / off, brightness |
+| Color light | `light` | on / off, brightness, RGB colour |
+| Color cycle | `switch` | the fan's built-in colour sweep |
 
-## How It Works
+State is **pushed**, not polled: the fan streams its status several times a
+second, so changes made at the wall switch or from the vendor app show up in
+Home Assistant immediately.
 
-This integration mirrors the iOS app workflow:
+The three light modes are mutually exclusive in the fan's own firmware — turning
+on the colour light switches off the white light, and vice versa. The entities
+reflect whatever the fan reports.
 
-1. **Scan** - Discovers ChromaComfort devices via Bluetooth
-2. **Select** - User picks their fan from the list
-3. **Configure** - Name the device and assign a room
-4. **Connect** - On first command, pairs using PIN 1234
-5. **Control** - Send commands (fan on/off, light on/off)
-6. **Disconnect** - Automatically disconnects after 10 seconds of inactivity
+## Supported models
 
-## Prerequisites
+AER110RGBL, AERN110RGBL, SPK110RGBL, SPKN110RGBL, FG600RGB, FG800RGB, and the
+Canadian `-C` variants. These are the models the official ChromaComfort app
+lists. Any unit that advertises as `Chroma-Comfort` should work.
 
-- Home Assistant with Bluetooth support
-- ChromaComfort fan powered on and within BLE range (~30 feet)
-- Fan not currently connected to iOS app (only one connection at a time)
+## Requirements
+
+- Home Assistant 2024.8 or newer
+- A Bluetooth adapter, or an [ESPHome Bluetooth proxy][proxy] within range of
+  the fan
+
+The fan needs no pairing or PIN, which means Bluetooth proxies work — useful
+given bathroom fans are rarely near the Home Assistant host. (The PIN `1234` in
+Broan's documentation is for the Sensonic speaker models' audio pairing, a
+separate thing.)
 
 ## Installation
 
-### Method 1: HACS (Recommended)
+### HACS
 
-1. Ensure [HACS](https://hacs.xyz/) is installed
-2. Go to **HACS** → **Integrations**
-3. Click **⋮** → **Custom repositories**
-4. Add: `https://github.com/seeloesix/chromacomfort`
-5. Category: **Integration**
-6. Install **ChromaComfort**
-7. Restart Home Assistant
+1. In Home Assistant go to **HACS → ⋮ → Custom repositories**.
+2. Add `https://github.com/seeloesix/chromacomfort` with type **Integration**.
+3. Find **ChromaComfort** in HACS and click **Download**.
+4. Restart Home Assistant.
 
-### Method 2: Manual Installation
+Updates then appear in HACS automatically whenever a new release is published.
 
-```bash
-# For Home Assistant OS/Container
-mkdir -p /config/custom_components
-cd /tmp
-wget https://github.com/seeloesix/chromacomfort/archive/main.zip
-unzip main.zip
-cp -r chromacomfort-main/custom_components/chromacomfort /config/custom_components/
+### Manual
 
-# Restart Home Assistant via UI: Settings → System → Restart
-```
+Copy `custom_components/chromacomfort/` into your Home Assistant
+`config/custom_components/` directory and restart.
 
 ## Setup
 
-1. **Restart Home Assistant** after installation
-2. Go to **Settings** → **Devices & Services**
-3. Click **+ ADD INTEGRATION**
-4. Search for **"ChromaComfort"**
-5. Select your fan from the discovered devices
-6. Name the device and assign a room
-7. Done! The device will pair automatically (PIN 1234) on first use
+Home Assistant discovers the fan automatically once it is in Bluetooth range —
+look for a **ChromaComfort** discovery card on the Devices page and click
+**Configure**.
 
-## Usage
+To add one manually, go to **Settings → Devices & services → Add integration**
+and search for **ChromaComfort**.
 
-After setup, you'll have two entities:
-- `fan.<device_name>_fan` - Fan control
-- `light.<device_name>_light` - Light control
-
-### Dashboard Card
-
-```yaml
-type: entities
-title: Bathroom Fan
-entities:
-  - entity: fan.bathroom_fan
-  - entity: light.bathroom_light
-```
-
-### Service Calls
-
-```yaml
-# Turn fan on
-service: fan.turn_on
-target:
-  entity_id: fan.bathroom_fan
-
-# Turn fan off
-service: fan.turn_off
-target:
-  entity_id: fan.bathroom_fan
-
-# Turn light on with color
-service: light.turn_on
-target:
-  entity_id: light.bathroom_light
-data:
-  rgb_color: [255, 0, 0]  # Red
-```
-
-### Automation Example
-
-```yaml
-automation:
-  - alias: "Turn on fan when humid"
-    trigger:
-      - platform: numeric_state
-        entity_id: sensor.bathroom_humidity
-        above: 70
-    action:
-      - service: fan.turn_on
-        target:
-          entity_id: fan.bathroom_fan
-```
+If you have several fans, each is a separate device keyed on its Bluetooth
+address; add them one at a time.
 
 ## Troubleshooting
 
-### Fan Not Discovered
+**The fan isn't discovered.** Confirm it has power, and that a Bluetooth adapter
+or proxy is in range. Bathroom fans are often behind tile and joists, so signal
+can be worse than the distance suggests — check the RSSI on the discovery card.
 
-- Ensure fan is powered on
-- Close the iOS ChromaComfort app (disconnect from fan)
-- Check fan is within Bluetooth range (~30 feet)
-- Restart Home Assistant and try again
+**Commands are ignored or slow.** The fan's command channel is
+write-without-response and genuinely does drop packets. The integration resends
+until the fan's own status confirms the change, so occasional retries are normal
+and expected; a persistent failure usually means marginal signal.
 
-### Connection Fails
+**Entities show as unavailable.** That means the connection dropped or status
+stopped arriving. The integration reconnects on its own every 10 seconds.
 
-- Only one device can connect at a time
-- Disconnect iOS app before using Home Assistant
-- Wait a few seconds after disconnecting iOS app
-- The PIN code is always **1234**
-
-### Commands Don't Work
-
-- Check Home Assistant logs for errors
-- Enable debug logging (see below)
-- Ensure you're controlling the correct device
-
-### Debug Logging
-
-Add to `configuration.yaml`:
+To report a problem, enable debug logging and include the output:
 
 ```yaml
 logger:
-  default: info
   logs:
     custom_components.chromacomfort: debug
 ```
 
-## Architecture
+## Protocol
 
-```
-┌─────────────────────────────────────────┐
-│           Home Assistant                │
-├─────────────────────────────────────────┤
-│  Fan Entity          Light Entity       │
-│  (fan.py)            (light.py)         │
-└──────────────┬───────────────┬──────────┘
-               │               │
-        ┌──────┴───────────────┴──────┐
-        │     ChromaComfortCoordinator│
-        │     (coordinator.py)        │
-        │                             │
-        │  • On-demand connection     │
-        │  • Auto-disconnect (10s)    │
-        │  • Command queueing         │
-        │  • Status notifications     │
-        └─────────────┬───────────────┘
-                      │
-              ┌───────┴───────┐
-              │   BLE/Bleak   │
-              │   PIN: 1234   │
-              └───────┬───────┘
-                      │
-              ┌───────┴───────┐
-              │ ChromaComfort │
-              │     Fan       │
-              └───────────────┘
+The wire protocol is documented in [PROTOCOL.md](PROTOCOL.md) — frame format,
+opcodes, the status bitmask, the CRC algorithm, and the three non-obvious rules
+you have to follow to make the fan listen. It is written to be useful to anyone
+working with this hardware, not just to this integration.
+
+Development tools live in `tools/`:
+
+```bash
+python tools/probe.py scan                    # find fans
+python tools/probe.py dump   <address>        # enumerate GATT
+python tools/probe.py watch  <address>        # decode the status stream
+python tools/probe.py send   <address> fan_on # send commands
+python tools/live_test.py    <address>        # end-to-end test against real hardware
 ```
 
-## Current Status
+Run the unit tests, which validate the protocol against 651 real captured
+frames, with `pytest`.
 
-### Working
-- Device discovery via Bluetooth
-- Configuration flow with custom naming
-- Fan on/off control
-- Light on/off control
-- RGB color support (framework)
-- Auto-disconnect after inactivity
-- iOS app compatibility
+## Credits
 
-### In Development
-- Light brightness control
-- Fan speed control (currently single speed)
-- Scene/preset support
+The command opcodes and the delivery rules were published by
+[widowsson7/chromacomfort-ble-mqtt](https://github.com/widowsson7/chromacomfort-ble-mqtt),
+building on [taylorfinnell's Bluetooth Classic
+work](https://gist.github.com/taylorfinnell/5349b8085d57836a45be7637055e0692).
 
-## Support
+Not affiliated with or endorsed by Broan-NuTone. Licensed MIT.
 
-- **Issues**: [GitHub Issues](https://github.com/seeloesix/chromacomfort/issues)
-- **Community**: [Home Assistant Forums](https://community.home-assistant.io)
-
-## License
-
-MIT License - see [LICENSE](LICENSE) file.
-
-## Disclaimer
-
-This integration is not affiliated with Broan-NuTone or GooWi Technology. Use at your own risk.
+[hacs]: https://github.com/hacs/integration
+[hacs-badge]: https://img.shields.io/badge/HACS-Custom-41BDF5.svg
+[proxy]: https://esphome.io/components/bluetooth_proxy.html

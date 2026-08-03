@@ -1,109 +1,92 @@
-"""Light entity for ChromaComfort integration."""
+"""Light platform for ChromaComfort.
+
+The fan has two independent lamps: a white ceiling light and an RGB accent
+light. The device treats its light modes as mutually exclusive, so turning one
+on switches the other off; both entities follow the fan's own status reports, so
+that resolves itself without any special handling here.
+"""
+
 from __future__ import annotations
 
-import logging
 from typing import Any
 
-from homeassistant.components.light import (
-    ATTR_BRIGHTNESS,
-    ATTR_RGB_COLOR,
-    ColorMode,
-    LightEntity,
-)
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.components.light import ATTR_BRIGHTNESS, ATTR_RGB_COLOR, ColorMode, LightEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
-from .coordinator import ChromaComfortCoordinator
-
-_LOGGER = logging.getLogger(__name__)
+from . import ChromaComfortConfigEntry
+from .device import brightness_to_ha
+from .entity import ChromaComfortEntity
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: ChromaComfortConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up ChromaComfort light entity."""
-    coordinator: ChromaComfortCoordinator = hass.data[DOMAIN][entry.entry_id]
-
-    _LOGGER.info("[LIGHT] Setting up light entity for %s", coordinator.custom_name)
-
-    async_add_entities([ChromaComfortLight(coordinator, entry)])
+    """Set up the white and colour lights."""
+    device = entry.runtime_data
+    async_add_entities([ChromaComfortWhiteLight(device), ChromaComfortColorLight(device)])
 
 
-class ChromaComfortLight(CoordinatorEntity, LightEntity):
-    """ChromaComfort light entity with RGB support."""
+class ChromaComfortWhiteLight(ChromaComfortEntity, LightEntity):
+    """The white ceiling light."""
 
-    _attr_has_entity_name = True
-    _attr_name = "Light"
-    _attr_icon = "mdi:led-strip-variant"
-    _attr_color_mode = ColorMode.RGB
-    _attr_supported_color_modes = {ColorMode.RGB}
+    _attr_translation_key = "white_light"
+    _attr_color_mode = ColorMode.BRIGHTNESS
+    _attr_supported_color_modes = {ColorMode.BRIGHTNESS}
 
-    def __init__(
-        self,
-        coordinator: ChromaComfortCoordinator,
-        entry: ConfigEntry,
-    ) -> None:
-        """Initialize the light."""
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{entry.entry_id}_light"
-        self._attr_device_info = coordinator.device_info
-        self._coordinator = coordinator
+    def __init__(self, device) -> None:
+        super().__init__(device)
+        self._attr_unique_id = f"{device.address}_white_light"
 
     @property
-    def available(self) -> bool:
-        """Return True - entity is always available for commands."""
-        return True
-
-    @property
-    def is_on(self) -> bool:
-        """Return true if the light is on."""
-        return self._coordinator.data.get("light_on", False)
+    def is_on(self) -> bool | None:
+        state = self._device.state
+        return None if state is None else state.light_on
 
     @property
     def brightness(self) -> int | None:
-        """Return current brightness."""
-        if not self.is_on:
-            return None
-        return self._coordinator.data.get("brightness", 255)
-
-    @property
-    def rgb_color(self) -> tuple[int, int, int] | None:
-        """Return current RGB color."""
-        if not self.is_on:
-            return None
-        return self._coordinator.data.get("rgb_color", (255, 255, 255))
+        state = self._device.state
+        return None if state is None else brightness_to_ha(state.brightness)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Turn on the light."""
-        _LOGGER.info("[LIGHT] Turn ON requested")
-
-        # Handle color if specified
-        rgb_color = kwargs.get(ATTR_RGB_COLOR)
-        if rgb_color:
-            await self._coordinator.set_light_color(rgb_color)
-
-        # Handle brightness if specified
-        brightness = kwargs.get(ATTR_BRIGHTNESS)
-        if brightness is not None:
-            await self._coordinator.set_light_brightness(brightness)
-
-        # Turn on the light
-        success = await self._coordinator.set_light_state(True)
-        if success:
-            self.async_write_ha_state()
-        else:
-            _LOGGER.error("[LIGHT] Failed to turn on")
+        await self._device.async_set_white_light(True, kwargs.get(ATTR_BRIGHTNESS))
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        """Turn off the light."""
-        _LOGGER.info("[LIGHT] Turn OFF requested")
-        success = await self._coordinator.set_light_state(False)
-        if success:
-            self.async_write_ha_state()
-        else:
-            _LOGGER.error("[LIGHT] Failed to turn off")
+        await self._device.async_set_white_light(False)
+
+
+class ChromaComfortColorLight(ChromaComfortEntity, LightEntity):
+    """The RGB accent light."""
+
+    _attr_translation_key = "color_light"
+    _attr_color_mode = ColorMode.RGB
+    _attr_supported_color_modes = {ColorMode.RGB}
+
+    def __init__(self, device) -> None:
+        super().__init__(device)
+        self._attr_unique_id = f"{device.address}_color_light"
+
+    @property
+    def is_on(self) -> bool | None:
+        state = self._device.state
+        return None if state is None else state.favorite_1_on
+
+    @property
+    def brightness(self) -> int | None:
+        state = self._device.state
+        return None if state is None else brightness_to_ha(state.brightness)
+
+    @property
+    def rgb_color(self) -> tuple[int, int, int]:
+        """The fan never reports its colour back, so this is what we last set."""
+        return self._device.rgb
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self._device.async_set_color_light(
+            True, kwargs.get(ATTR_BRIGHTNESS), kwargs.get(ATTR_RGB_COLOR)
+        )
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self._device.async_set_color_light(False)

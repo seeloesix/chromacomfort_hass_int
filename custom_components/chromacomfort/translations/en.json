@@ -1,35 +1,40 @@
 {
   "config": {
+    "flow_title": "{name}",
     "step": {
+      "bluetooth_confirm": {
+        "description": "Set up {name}?"
+      },
       "user": {
-        "title": "Select ChromaComfort Fan",
-        "description": "Select your ChromaComfort fan from the list of discovered devices.",
         "data": {
           "address": "Device"
-        }
-      },
-      "bluetooth_confirm": {
-        "title": "Configure ChromaComfort Fan",
-        "description": "**Device Found:**\n\n- Model: {model}\n- Manufacturer: {manufacturer}\n- Address: {address}\n\nCustomize the name and select a room for this device.\n\n**Note:** The device will pair automatically using PIN **{pin_code}** when you first control it.",
-        "data": {
-          "name": "Device Name",
-          "room": "Room / Area"
         },
-        "data_description": {
-          "name": "Enter a custom name for this fan",
-          "room": "Select which room this fan is located in"
-        }
+        "description": "Choose a ChromaComfort fan to add."
       }
     },
-    "error": {
-      "no_devices_found": "No ChromaComfort fans found. Make sure your fan is powered on and in Bluetooth range.",
-      "cannot_connect": "Could not connect to the device. Make sure it's powered on and try again.",
-      "unknown": "An unexpected error occurred"
-    },
     "abort": {
-      "already_configured": "This device is already configured",
-      "no_devices_found": "No ChromaComfort devices found",
-      "bluetooth_not_available": "Bluetooth is not available on this system"
+      "no_devices_found": "No ChromaComfort fans found. Make sure the fan has power and is in range of a Bluetooth adapter or proxy.",
+      "already_configured": "This fan is already set up."
+    }
+  },
+  "entity": {
+    "fan": {
+      "fan": {
+        "name": "Fan"
+      }
+    },
+    "light": {
+      "white_light": {
+        "name": "Light"
+      },
+      "color_light": {
+        "name": "Color light"
+      }
+    },
+    "switch": {
+      "color_cycle": {
+        "name": "Color cycle"
+      }
     }
   }
 }

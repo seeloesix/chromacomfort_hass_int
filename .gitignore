@@ -3,29 +3,46 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Development files
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Packaging / distribution
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Test and coverage artifacts
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+
+# Reverse-engineering scratch space. The captures that matter are checked in as
+# test fixtures under tests/fixtures/.
 development/
 research/
 backups/
 
-# IDE files
+# Editors
 .vscode/
 .idea/
+*.swp
+*.tmp
 
 # Home Assistant
 *.log
 .storage/
 
-# Temporary files
-*.tmp
+# OS
 .DS_Store
+Thumbs.db
 
-# Claude Files
-.claude
-
-#Git Files
-.gitattributes
-.gitignore
-.gitmodules
-
-
+# Claude Code
+.claude/
