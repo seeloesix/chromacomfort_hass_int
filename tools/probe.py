@@ -99,19 +99,34 @@ async def _subscribe(client: BleakClient, on_state) -> None:
 
 
 async def watch(address: str, seconds: float = 60.0) -> None:
+    """Log every status change, reconnecting if the app steals the connection."""
+    import time
+
+    started = time.time()
     last = None
+
+    def stamp() -> str:
+        return f"{time.time() - started:7.1f}s"
 
     def on_state(state: p.ChromaComfortState) -> None:
         nonlocal last
         key = (state.mask, state.brightness)
         if key != last:
             last = key
-            print(f"  {describe(state)}")
+            print(f"{stamp()}  {describe(state)}", flush=True)
 
-    async with BleakClient(address, timeout=20.0) as client:
-        print(f"Connected. Watching {seconds:.0f}s -- use the wall switch to see updates.\n")
-        await _subscribe(client, on_state)
-        await asyncio.sleep(seconds)
+    while time.time() - started < seconds:
+        try:
+            async with BleakClient(address, timeout=20.0) as client:
+                print(f"{stamp()}  -- connected --", flush=True)
+                await _subscribe(client, on_state)
+                while client.is_connected and time.time() - started < seconds:
+                    await asyncio.sleep(0.2)
+            print(f"{stamp()}  -- disconnected --", flush=True)
+        except Exception as err:  # noqa: BLE001
+            print(f"{stamp()}  -- connect failed: {type(err).__name__} --", flush=True)
+        last = None
+        await asyncio.sleep(1.0)
 
 
 def parse_command(spec: str) -> tuple[str, bytes]:
@@ -134,6 +149,17 @@ def parse_command(spec: str) -> tuple[str, bytes]:
     if spec.startswith("color:"):
         r, g, b = (int(v) for v in spec.split(":", 1)[1].split(","))
         return spec, p.save_favorite_color(r, g, b)
+    if spec.startswith("raw:"):
+        # raw:<opcode>[,r,g,b,dimmer,speed,sweep1,sweep2] -- all decimal.
+        parts = [int(v, 0) for v in spec.split(":", 1)[1].split(",")]
+        parts += [0] * (8 - len(parts))
+        opcode, r, g, b, dimmer, speed, sw1, sw2 = parts[:8]
+        frame = bytearray(
+            p.build_command(opcode, red=r, green=g, blue=b, dimmer=dimmer, speed=speed)
+        )
+        frame[11] = sw1
+        frame[12] = sw2
+        return spec, bytes(frame)
     raise SystemExit(f"unknown command {spec!r}")
 
 
@@ -149,6 +175,30 @@ async def send(address: str, specs: list[str]) -> None:
             print(f"  before: {describe(states[-1])}\n")
 
         for spec in specs:
+            if spec.startswith("scene:"):
+                scene = spec.split(":", 1)[1]
+                first, second = p.scene_frames(scene)
+                colors, cycle = p.BUILTIN_SCENES[scene]
+                print(f"-> scene {scene}: {' '.join(colors)}  cycle={cycle}s")
+                print(f"   f1 {first.hex()}\n   f2 {second.hex()}")
+                states.clear()
+                await client.write_gatt_char(
+                    WRITE_UUID, p.build_command(p.CMD_PATTERN_OFF, dimmer=10), response=False
+                )
+                await asyncio.sleep(1.0)
+                for _ in range(WRITE_REPEATS):
+                    await client.write_gatt_char(WRITE_UUID, first, response=False)
+                    await asyncio.sleep(WRITE_GAP)
+                    await client.write_gatt_char(WRITE_UUID, second, response=False)
+                    await asyncio.sleep(WRITE_GAP)
+                await asyncio.sleep(1.0)
+                activate = p.build_command(p.CMD_PATTERN_ON, dimmer=100, speed=cycle)
+                for _ in range(WRITE_REPEATS):
+                    await client.write_gatt_char(WRITE_UUID, activate, response=False)
+                    await asyncio.sleep(WRITE_GAP)
+                await asyncio.sleep(3.5)
+                print(f"   after: {describe(states[-1]) if states else 'no status'}\n")
+                continue
             name, frame = parse_command(spec)
             print(f"-> {name}: {frame.hex()}")
             states.clear()

@@ -58,6 +58,14 @@ CMD_PATTERN_SAVE: Final = 0x2A
 # Saving a favourite colour is the one command that carries a non-zero speed.
 SAVE_FAVORITE_SPEED: Final = 30
 
+# The fan expects gamma-encoded colour channels; the vendor app uses an exponent
+# of 4 on all three.
+GAMMA: Final = 4
+
+# A scene is stored in eight colour slots across two frames.
+SCENE_SLOTS: Final = 8
+MAX_SCENE_COLORS: Final = 8
+
 # Status mask bits, frame byte 5.
 MASK_FAN: Final = 0x80
 MASK_LIGHT: Final = 0x40
@@ -161,8 +169,27 @@ def build_command(
     )
 
 
+def apply_gamma(value: int) -> int:
+    """Gamma-correct one colour channel the way the vendor app does.
+
+    The fan expects gamma-encoded values, not linear ones. Skipping this leaves
+    primaries looking right -- 0 and 255 are fixed points -- while every mixed
+    colour comes out far too bright.
+    """
+    return int(((value / 255) ** GAMMA) * 255)
+
+
+def gamma_rgb(rgb: tuple[int, int, int]) -> tuple[int, int, int]:
+    """Gamma-correct an RGB triplet."""
+    return (apply_gamma(rgb[0]), apply_gamma(rgb[1]), apply_gamma(rgb[2]))
+
+
 def save_favorite_color(red: int, green: int, blue: int) -> bytes:
-    """Store an RGB colour as favourite 1. Activate it with CMD_FAVORITE_ON."""
+    """Store an RGB colour as favourite 1. Activate it with CMD_FAVORITE_ON.
+
+    Takes linear 0-255 values and gamma-corrects them for the fan.
+    """
+    red, green, blue = gamma_rgb((red, green, blue))
     return build_command(
         CMD_SAVE_FAVORITE,
         red=red,
@@ -170,6 +197,85 @@ def save_favorite_color(red: int, green: int, blue: int) -> bytes:
         blue=blue,
         speed=SAVE_FAVORITE_SPEED,
     )
+
+
+def hex_to_rgb(value: str) -> tuple[int, int, int]:
+    """Parse '#RRGGBB' into a linear RGB triplet."""
+    value = value.lstrip("#")
+    return (int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16))
+
+
+def build_scene_frames(colors: list[tuple[int, int, int]]) -> tuple[bytes, bytes]:
+    """Encode a scene's colour list as the two frames the fan expects.
+
+    A scene occupies eight colour slots spread over two consecutive frames.
+    Palettes shorter than eight are repeated cyclically to fill them, and the
+    true count is sent separately so the fan knows where the loop ends.
+
+    The second frame has no opcode -- byte 5 is colour data. It is only
+    meaningful immediately after the first, which is why they are always written
+    as a pair.
+    """
+    if not 1 <= len(colors) <= MAX_SCENE_COLORS:
+        raise ValueError(f"a scene needs 1-{MAX_SCENE_COLORS} colours, got {len(colors)}")
+
+    first = bytearray(build_command(CMD_PATTERN_SAVE))
+    second = bytearray(build_command(0))
+    for offset in range(0, 12, 3):
+        slot = offset // 3
+        red, green, blue = gamma_rgb(colors[slot % len(colors)])
+        first[offset + 6], first[offset + 7], first[offset + 8] = red, green, blue
+        red, green, blue = gamma_rgb(colors[(slot + 4) % len(colors)])
+        second[offset + 5], second[offset + 6], second[offset + 7] = red, green, blue
+    second[17] = len(colors)
+    return bytes(first), bytes(second)
+
+
+# The seven scenes built into the vendor app, colours and cycle time verbatim.
+APP_SCENES: Final[dict[str, tuple[list[str], int]]] = {
+    "Sunset": (["#FFD757", "#FF5A7C", "#7A9FFF"], 30),
+    "Sunrise": (["#FF5439", "#FF9E5C", "#FFE469"], 30),
+    "Tropical Forest": (["#86FD63", "#61F8FF", "#4B88FF"], 30),
+    "Rainbow": (
+        ["#B5B4FF", "#599CFF", "#8ED6FF", "#A3FF77", "#FCFF77", "#FFC671", "#FF6464"],
+        30,
+    ),
+    "Night Sky": (["#9A76FF", "#EE80FF", "#A1CBFF", "#FFFFFF"], 30),
+    "Underwater": (["#FFFFFF", "#A6FBFF", "#679AFF"], 30),
+    "Northern Lights": (["#A6FF90", "#FDFB5D", "#FF7DD0", "#D177FF"], 30),
+}
+
+# Scenes of our own. Channels stay high because the gamma-4 encoding crushes
+# midtones hard -- a channel at 128 lands at 16 on the wire -- so pastels read
+# as near-black unless the dominant channels are near 255.
+EXTRA_SCENES: Final[dict[str, tuple[list[str], int]]] = {
+    "Christmas": (["#FF1E1E", "#FFFFFF", "#1EFF46"], 30),
+    "Halloween": (["#FF6A00", "#B026FF", "#4CFF29"], 30),
+    "Valentine": (["#FF0A46", "#FF6FA5", "#FFB3C9"], 30),
+    "Independence Day": (["#FF1E1E", "#FFFFFF", "#2E5CFF"], 30),
+    "St. Patrick's Day": (["#00D64F", "#7CFF52", "#FFD700"], 30),
+    "Easter": (["#FFAFCF", "#AEE7FF", "#FFF48F", "#B6FFC0"], 60),
+    "Thanksgiving": (["#FF4E11", "#FF8C1A", "#FFC04D", "#FFE79E"], 60),
+    "Hanukkah": (["#2E6CFF", "#8FC2FF", "#FFFFFF"], 30),
+    "New Year": (["#FFD700", "#FFFFFF", "#FFF2A8"], 30),
+    "Mardi Gras": (["#8A1FFF", "#00C74D", "#FFD700"], 30),
+    "Candlelight": (["#FF8A1E", "#FFB347", "#FFD79A"], 240),
+    "Spa": (["#8CFFD6", "#B7F3FF", "#E8FFFA"], 240),
+}
+
+# Everything the light entity offers as an effect.
+BUILTIN_SCENES: Final[dict[str, tuple[list[str], int]]] = {**APP_SCENES, **EXTRA_SCENES}
+
+
+def scene_frames(name: str) -> tuple[bytes, bytes]:
+    """Encode one of the built-in scenes by name."""
+    hex_colors, _ = BUILTIN_SCENES[name]
+    return build_scene_frames([hex_to_rgb(value) for value in hex_colors])
+
+
+def scene_cycle_seconds(name: str) -> int:
+    """How long the fan takes to walk the whole palette, in seconds."""
+    return BUILTIN_SCENES[name][1]
 
 
 def is_status_frame(frame: bytes) -> bool:

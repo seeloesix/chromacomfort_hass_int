@@ -46,3 +46,4 @@ class ChromaComfortColorCycle(ChromaComfortEntity, SwitchEntity):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self._device.async_set_wall_cycle(False)
+

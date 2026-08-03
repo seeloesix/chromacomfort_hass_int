@@ -14,8 +14,34 @@ Each fan appears as one device with four entities:
 |---|---|---|
 | Fan | `fan` | on / off (the unit is single-speed) |
 | Light | `light` | on / off, brightness |
-| Color light | `light` | on / off, brightness, RGB colour |
+| Color light | `light` | on / off, brightness, RGB colour, **19 animated scenes** |
 | Color cycle | `switch` | the fan's built-in colour sweep |
+
+### Scenes
+
+The colour light exposes animated scenes as Home Assistant **effects**, so you
+can pick one from the light's more-info dialog or set it from an automation:
+
+```yaml
+service: light.turn_on
+target:
+  entity_id: light.chromacomfort_color_light
+data:
+  effect: Christmas
+  brightness: 255
+```
+
+All seven of the vendor app's scenes are included — Sunset, Sunrise, Tropical
+Forest, Rainbow, Night Sky, Underwater, Northern Lights — reproduced
+byte-for-byte from the app. On top of those are twelve of our own: Christmas,
+Halloween, Valentine, Independence Day, St. Patrick's Day, Easter, Thanksgiving,
+Hanukkah, New Year, Mardi Gras, Candlelight, and Spa.
+
+Scenes are uploaded to the fan on demand, so you are not limited to whatever the
+app last stored. Adding your own is a few lines in `protocol.py` —
+`EXTRA_SCENES` maps a name to a list of up to eight hex colours and a cycle time
+in seconds. Bear in mind the fan gamma-encodes colours steeply, so saturated,
+high-value channels read far better than pastels.
 
 State is **pushed**, not polled: the fan streams its status several times a
 second, so changes made at the wall switch or from the vendor app show up in

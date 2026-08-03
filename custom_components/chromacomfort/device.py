@@ -24,6 +24,7 @@ from .const import (
     MAX_BRIGHTNESS,
     MIN_BRIGHTNESS,
     NOTIFY_CHAR_UUID,
+    SCENE_STEP_GAP,
     WRITE_CHAR_UUID,
     WRITE_GAP,
     WRITE_REPEATS,
@@ -64,8 +65,10 @@ class ChromaComfortDevice:
         self._state: p.ChromaComfortState | None = None
         self._reconnect_task: asyncio.Task | None = None
         self._closing = False
-        # The fan never reports its RGB value back, so track what we last set.
+        # The fan reports neither its RGB value nor which scene is loaded, so
+        # track both locally.
         self._rgb: tuple[int, int, int] = (255, 255, 255)
+        self._scene: str | None = None
 
     @property
     def address(self) -> str:
@@ -271,3 +274,53 @@ class ChromaComfortDevice:
             p.build_command(p.CMD_WALL_RGB_ON if on else p.CMD_WALL_RGB_OFF),
             lambda state: state.wall_rgb_on is on,
         )
+
+    async def async_stop_scene(self) -> None:
+        """Stop scene playback."""
+        await self._confirmed(
+            p.build_command(p.CMD_PATTERN_OFF), lambda state: not state.user_pattern_on
+        )
+        self._scene = None
+
+    async def async_set_scene(self, name: str, brightness: int | None = None) -> None:
+        """Upload a scene's palette to the fan and start playing it.
+
+        Three steps, matching the vendor app: stop any running scene, write the
+        colour pair, then activate. The fan stores one scene at a time, so
+        switching scenes means re-uploading.
+        """
+        first, second = p.scene_frames(name)
+        dimmer = brightness_to_device(brightness) if brightness is not None else MAX_BRIGHTNESS
+
+        await self._send(p.build_command(p.CMD_PATTERN_OFF, dimmer=MIN_BRIGHTNESS))
+        await asyncio.sleep(SCENE_STEP_GAP)
+
+        # The two frames are a unit -- the second carries colour data where the
+        # opcode would be, so it only means anything directly after the first.
+        # The app writes the pair three times rather than each frame three
+        # times, and waits for no acknowledgement.
+        async with self._write_lock:
+            if self._client is None or not self._client.is_connected:
+                await self.connect()
+            client = self._client
+            if client is None:
+                raise BleakError(f"Not connected to {self.address}")
+            for _ in range(WRITE_REPEATS):
+                await client.write_gatt_char(WRITE_CHAR_UUID, first, response=False)
+                await asyncio.sleep(WRITE_GAP)
+                await client.write_gatt_char(WRITE_CHAR_UUID, second, response=False)
+                await asyncio.sleep(WRITE_GAP)
+        await asyncio.sleep(SCENE_STEP_GAP)
+
+        await self._confirmed(
+            p.build_command(
+                p.CMD_PATTERN_ON, dimmer=dimmer, speed=p.scene_cycle_seconds(name)
+            ),
+            lambda state: state.user_pattern_on,
+        )
+        self._scene = name
+
+    @property
+    def scene(self) -> str | None:
+        """The scene we last started, or None. The fan does not report this."""
+        return self._scene
