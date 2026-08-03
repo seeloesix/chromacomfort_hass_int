@@ -33,3 +33,8 @@ COMMAND_GAP: Final = 0.25
 # The fan refuses to dim below 10%.
 MIN_BRIGHTNESS: Final = 10
 MAX_BRIGHTNESS: Final = 100
+
+# Gap between the three steps of a scene upload (stop, write palette, activate).
+# COMMAND_GAP is too short here: the activation is dropped if it follows the
+# palette write too closely. The vendor app waits about a second.
+SCENE_STEP_GAP: Final = 1.0

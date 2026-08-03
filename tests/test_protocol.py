@@ -167,19 +167,21 @@ class TestBuildCommand:
         assert p.build_command(p.CMD_LIGHT_ON, dimmer=75) == bytes(
             [0x3A, 0x11, 0x01, 0x00, 0x40, 0x03, 0, 0, 0, 75, 0, 0x01, 0x18, 0, 0, 0, 0, 0, 0]
         )
+        # Orange 255,165,4 goes out gamma-corrected as 255,44,0.
         assert p.save_favorite_color(0xFF, 0xA5, 0x04) == bytes(
-            [0x3A, 0x11, 0x01, 0x00, 0x40, 0x0D, 0xFF, 0xA5, 0x04, 0, 30, 0x01, 0x18, 0, 0, 0, 0, 0, 0]
+            [0x3A, 0x11, 0x01, 0x00, 0x40, 0x0D, 0xFF, 44, 0, 0, 30, 0x01, 0x18, 0, 0, 0, 0, 0, 0]
         )
 
     def test_save_favorite_sets_speed(self):
         cmd = p.save_favorite_color(255, 165, 4)
         assert cmd[5] == p.CMD_SAVE_FAVORITE
-        assert (cmd[6], cmd[7], cmd[8]) == (255, 165, 4)
         assert cmd[10] == p.SAVE_FAVORITE_SPEED
 
-    def test_rgb_is_not_gamma_corrected(self):
-        cmd = p.save_favorite_color(255, 165, 4)
-        assert (cmd[6], cmd[7], cmd[8]) == (255, 165, 4)
+    def test_rgb_is_gamma_corrected(self):
+        # Primaries are fixed points, which is why this went unnoticed until the
+        # vendor app confirmed the gamma-4 encoding.
+        assert p.save_favorite_color(255, 0, 255)[6:9] == bytes([255, 0, 255])
+        assert p.save_favorite_color(255, 165, 4)[6:9] == bytes([255, 44, 0])
 
     @pytest.mark.parametrize("dimmer", [-1, 101, 255])
     def test_rejects_out_of_range_dimmer(self, dimmer):
@@ -190,3 +192,91 @@ class TestBuildCommand:
     def test_rejects_out_of_range_rgb(self, field):
         with pytest.raises(ValueError, match=f"{field} must be 0-255"):
             p.build_command(p.CMD_SAVE_FAVORITE, **{field: 256})
+
+
+class TestGamma:
+    def test_endpoints_are_fixed(self):
+        assert p.apply_gamma(0) == 0
+        assert p.apply_gamma(255) == 255
+
+    def test_midtones_are_crushed(self):
+        # This is why primaries looked correct before gamma was implemented and
+        # mixed colours did not.
+        assert p.apply_gamma(128) == 16
+        assert p.apply_gamma(200) == 96
+
+    def test_monotonic(self):
+        values = [p.apply_gamma(v) for v in range(256)]
+        assert values == sorted(values)
+
+    def test_save_favorite_gamma_corrects(self):
+        cmd = p.save_favorite_color(255, 128, 0)
+        assert (cmd[6], cmd[7], cmd[8]) == (255, 16, 0)
+
+
+class TestSceneFrames:
+    def test_matches_vendor_app_output(self):
+        # Reproduces the frames the vendor app emits for Sunrise, derived from
+        # its decompiled bundle.
+        first, second = p.scene_frames("Sunrise")
+        assert first == bytes.fromhex("3a110100402aff0300ff2504ffa207ff030000")
+        assert second == bytes.fromhex("3a11010040ff2504ffa207ff0300ff25040300")
+
+    def test_first_frame_carries_opcode_second_does_not(self):
+        first, second = p.scene_frames("Rainbow")
+        assert first[5] == p.CMD_PATTERN_SAVE
+        assert first[:5] == second[:5] == bytes([0x3A, 0x11, 0x01, 0x00, 0x40])
+
+    def test_count_byte_holds_real_palette_length(self):
+        for name, (colors, _) in p.BUILTIN_SCENES.items():
+            _, second = p.scene_frames(name)
+            assert second[17] == len(colors), name
+
+    def test_short_palettes_repeat_cyclically(self):
+        red, green, blue = (255, 0, 0), (0, 255, 0), (0, 0, 255)
+        first, second = p.build_scene_frames([red, green, blue])
+        # Eight slots filled from a three-colour palette: slots 0-3 in frame 1,
+        # 4-7 in frame 2, each colors[slot % 3].
+        assert (first[6], first[7], first[8]) == red
+        assert (first[9], first[10], first[11]) == green
+        assert (first[12], first[13], first[14]) == blue
+        assert (first[15], first[16], first[17]) == red
+        assert (second[5], second[6], second[7]) == green
+
+    def test_all_frames_are_19_bytes(self):
+        for name in p.BUILTIN_SCENES:
+            first, second = p.scene_frames(name)
+            assert len(first) == len(second) == 19, name
+
+    @pytest.mark.parametrize("count", [0, 9, 20])
+    def test_rejects_bad_palette_size(self, count):
+        with pytest.raises(ValueError, match="1-8 colours"):
+            p.build_scene_frames([(255, 0, 0)] * count)
+
+    def test_hex_parsing(self):
+        assert p.hex_to_rgb("#FF8000") == (255, 128, 0)
+        assert p.hex_to_rgb("FFFFFF") == (255, 255, 255)
+
+
+class TestSceneCatalogue:
+    def test_app_scenes_present(self):
+        assert set(p.APP_SCENES) == {
+            "Sunset", "Sunrise", "Tropical Forest", "Rainbow",
+            "Night Sky", "Underwater", "Northern Lights",
+        }
+
+    def test_catalogue_is_union(self):
+        assert set(p.BUILTIN_SCENES) == set(p.APP_SCENES) | set(p.EXTRA_SCENES)
+
+    def test_every_scene_is_valid(self):
+        for name, (colors, cycle) in p.BUILTIN_SCENES.items():
+            assert 1 <= len(colors) <= p.MAX_SCENE_COLORS, name
+            assert 30 <= cycle <= 240 and cycle % 30 == 0, name
+            for value in colors:
+                assert len(value) == 7 and value[0] == "#", f"{name}: {value}"
+                p.hex_to_rgb(value)
+
+    def test_scenes_are_visually_distinct_after_gamma(self):
+        # Gamma-4 can collapse similar palettes; make sure none encode identically.
+        encoded = {name: p.scene_frames(name) for name in p.BUILTIN_SCENES}
+        assert len(set(encoded.values())) == len(encoded)

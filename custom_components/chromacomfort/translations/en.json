@@ -34,6 +34,9 @@
     "switch": {
       "color_cycle": {
         "name": "Color cycle"
+      },
+      "scene": {
+        "name": "Scene"
       }
     }
   }

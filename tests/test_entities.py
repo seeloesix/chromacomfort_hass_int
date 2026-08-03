@@ -48,6 +48,9 @@ class StubDevice:
         self.async_set_white_light = AsyncMock()
         self.async_set_color_light = AsyncMock()
         self.async_set_wall_cycle = AsyncMock()
+        self.async_set_scene = AsyncMock()
+        self.async_stop_scene = AsyncMock()
+        self.scene = None
 
     def register_callback(self, callback):
         return lambda: None
@@ -146,3 +149,48 @@ class TestUniqueIds:
             ChromaComfortColorCycle(device).unique_id,
         }
         assert len(ids) == 4
+
+
+
+class TestColorLightEffects:
+    def test_effect_list_covers_all_scenes(self):
+        entity = ChromaComfortColorLight(StubDevice(make_state(0)))
+        assert set(entity.effect_list) == set(p.BUILTIN_SCENES)
+        assert len(entity.effect_list) == 19
+
+    def test_on_when_either_solid_or_scene_active(self):
+        assert ChromaComfortColorLight(StubDevice(make_state(p.MASK_FAVORITE_1))).is_on is True
+        assert ChromaComfortColorLight(StubDevice(make_state(p.MASK_USER_PATTERN))).is_on is True
+        assert ChromaComfortColorLight(StubDevice(make_state(0))).is_on is False
+
+    def test_effect_reported_only_while_scene_runs(self):
+        device = StubDevice(make_state(p.MASK_USER_PATTERN))
+        device.scene = "Rainbow"
+        assert ChromaComfortColorLight(device).effect == "Rainbow"
+
+        solid = StubDevice(make_state(p.MASK_FAVORITE_1))
+        solid.scene = "Rainbow"
+        assert ChromaComfortColorLight(solid).effect is None
+
+    async def test_turn_on_with_effect_starts_scene(self):
+        device = StubDevice(make_state(0))
+        entity = ChromaComfortColorLight(device)
+        await entity.async_turn_on(effect="Christmas", brightness=200)
+        device.async_set_scene.assert_awaited_with("Christmas", 200)
+        device.async_set_color_light.assert_not_awaited()
+
+    async def test_turn_on_with_color_leaves_scene_mode(self):
+        device = StubDevice(make_state(p.MASK_USER_PATTERN))
+        entity = ChromaComfortColorLight(device)
+        await entity.async_turn_on(rgb_color=(1, 2, 3))
+        device.async_set_color_light.assert_awaited_with(True, None, (1, 2, 3))
+        device.async_set_scene.assert_not_awaited()
+
+    async def test_turn_off_stops_whichever_mode_is_running(self):
+        scene = StubDevice(make_state(p.MASK_USER_PATTERN))
+        await ChromaComfortColorLight(scene).async_turn_off()
+        scene.async_stop_scene.assert_awaited()
+
+        solid = StubDevice(make_state(p.MASK_FAVORITE_1))
+        await ChromaComfortColorLight(solid).async_turn_off()
+        solid.async_set_color_light.assert_awaited_with(False)

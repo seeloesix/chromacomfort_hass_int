@@ -76,6 +76,81 @@ Every packet is 19 bytes in both directions.
 
 Setting a colour is two commands: `0x0D` to store it, then `0x0B` to activate.
 
+### Gamma
+
+Colours are **gamma-encoded with an exponent of 4** on all three channels before
+transmission:
+
+```
+wire_value = floor((linear / 255) ** 4 * 255)
+```
+
+This applies to both the favourite colour (`0x0D`) and scene palettes. Skipping
+it is easy to miss, because 0 and 255 are fixed points — pure primaries look
+correct while every mixed colour comes out far too bright. Note how hard it
+crushes midtones: 128 becomes 16, 200 becomes 96.
+
+### Scenes / custom patterns
+
+A scene is an animated palette of up to **8 colours** stored on the fan. The
+device holds exactly one at a time, so switching scenes means re-uploading.
+
+The palette is written as **two consecutive frames**. The first carries the
+`0x2A` opcode and colour slots 0–3; the second has **no opcode at all** — byte 5
+is colour data — and carries slots 4–7 plus the real palette length. Slot `k`
+takes `colors[k % len]`, so short palettes repeat cyclically to fill all eight
+while the fan learns the true loop length from the count byte.
+
+```
+frame 1:  [5] = 0x2A,  colours at bytes 6, 9, 12, 15   (slots 0-3)
+frame 2:  no opcode,   colours at bytes 5, 8, 11, 14   (slots 4-7)
+          [17] = number of colours (1-8)
+```
+
+Both frames keep the standard `3A 11 01 00 40` header. In frame 1 the colour
+data overwrites the sweep bytes, so `sweep1`/`sweep2` carry no meaning during a
+save.
+
+Uploading and starting a scene is three steps, each separated by about a second:
+
+1. `0x21` deactivate, with `dimmer = 10`.
+2. The frame pair, written **as a pair, three times** — frame 1, frame 2, frame
+   1, frame 2, and so on. Not each frame three times.
+3. `0x20` activate, with `dimmer` = brightness and `speed` = cycle time in
+   seconds (the app offers 30–240 in steps of 30).
+
+A shorter gap than about a second before step 3 gets the activation dropped even
+though the palette upload succeeded.
+
+Activation sets status bit 1 (`0x02`). Sending `0x20` with an all-zero payload
+is ignored outright, with no ACK.
+
+The fan never reports which palette it holds, so a controller has to remember
+what it uploaded.
+
+#### The app's built-in scenes
+
+Seven, taken verbatim from the app, all with a 30-second cycle:
+
+| Scene | Colours |
+|---|---|
+| Sunset | `#FFD757` `#FF5A7C` `#7A9FFF` |
+| Sunrise | `#FF5439` `#FF9E5C` `#FFE469` |
+| Tropical Forest | `#86FD63` `#61F8FF` `#4B88FF` |
+| Rainbow | `#B5B4FF` `#599CFF` `#8ED6FF` `#A3FF77` `#FCFF77` `#FFC671` `#FF6464` |
+| Night Sky | `#9A76FF` `#EE80FF` `#A1CBFF` `#FFFFFF` |
+| Underwater | `#FFFFFF` `#A6FBFF` `#679AFF` |
+| Northern Lights | `#A6FF90` `#FDFB5D` `#FF7DD0` `#D177FF` |
+
+Worked example — Sunrise, verified byte-for-byte against the app:
+
+```
+deactivate : 3A 11 01 00 40 21 00 00 00 0A 00 01 18 00 00 00 00 00 00
+palette f1 : 3A 11 01 00 40 2A FF 03 00 FF 25 04 FF A2 07 FF 03 00 00
+palette f2 : 3A 11 01 00 40 FF 25 04 FF A2 07 FF 03 00 FF 25 04 03 00
+activate   : 3A 11 01 00 40 20 00 00 00 64 1E 01 18 00 00 00 00 00 00
+```
+
 ### Status (fan → host)
 
 ```
