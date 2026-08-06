@@ -30,6 +30,10 @@ development/
 research/
 backups/
 
+# Field diagnostics. Site-specific: carries this installation's Bluetooth
+# address and host layout, so it stays local.
+RECOVERY_RUNBOOK.md
+
 # Editors
 .vscode/
 .idea/

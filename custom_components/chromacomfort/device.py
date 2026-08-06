@@ -295,7 +295,14 @@ class ChromaComfortDevice:
 
         Write-without-response has no delivery guarantee and the fan does
         occasionally miss a command even with the triple write. It reports status
-        several times a second, so we can just watch for the change and retry.
+        unprompted, so we can just watch for the change and retry.
+
+        The measured cadence is about one frame per second, so the 1.5 s
+        CONFIRM_TIMEOUT below spans only a single frame in the worst phase
+        alignment: one dropped notification then costs a whole resend cycle, and
+        three of those report failure on a command the fan may well have applied.
+        Widening it trades that against holding the fan's single connection
+        longer, which is time the vendor app cannot have it.
         """
         for attempt in range(CONFIRM_ATTEMPTS):
             await self._write(frame)
