@@ -94,7 +94,7 @@ separate thing.)
 ### HACS
 
 1. In Home Assistant go to **HACS → ⋮ → Custom repositories**.
-2. Add `https://github.com/seeloesix/chromacomfort` with type **Integration**.
+2. Add `https://github.com/seeloesix/chromacomfort_hass_int` with type **Integration**.
 3. Find **ChromaComfort** in HACS and click **Download**.
 4. Restart Home Assistant.
 
@@ -128,8 +128,15 @@ write-without-response and genuinely does drop packets. The integration resends
 until the fan's own status confirms the change, so occasional retries are normal
 and expected; a persistent failure usually means marginal signal.
 
-**Entities show as unavailable.** That means the connection dropped or status
-stopped arriving. The integration reconnects on its own every 10 seconds.
+**Entities show as unavailable.** Availability follows whether the fan is still
+advertising, not whether Home Assistant holds a connection — it deliberately does
+not, most of the time. So unavailable means the fan has gone out of range or lost
+power. Entities that are available but showing stale values are a different
+thing; see [Sharing the fan with the phone app](#sharing-the-fan-with-the-phone-app).
+
+**A command failed with the app open.** The fan takes one connection at a time.
+If the ChromaComfort app is actively connected, Home Assistant cannot reach the
+fan until the app disconnects.
 
 To report a problem, enable debug logging and include the output:
 
