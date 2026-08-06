@@ -207,10 +207,14 @@ something else:
    repeats of one frame; back-to-back distinct commands cause the fan to act on
    only the first.
 
-Even with all three, commands are occasionally lost. Since the fan reports
-status several times a second, the reliable approach is to watch for the
-expected state change and resend if it does not arrive — which is what this
-integration does.
+Even with all three, commands are occasionally lost. Since the fan reports status
+unprompted, the reliable approach is to watch for the expected state change and
+resend if it does not arrive — which is what this integration does.
+
+The status cadence is **about one frame per second** while idle: 20 frames in
+20 s, ~1.02 s apart, all CRC-valid, measured on a live unit on 2026-08-06. Budget
+for that when choosing timeouts — a confirmation window shorter than about two
+seconds is betting on a single frame arriving.
 
 ## One connection at a time
 
