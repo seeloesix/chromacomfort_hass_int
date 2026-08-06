@@ -8,15 +8,15 @@
   "dependencies": [
     "bluetooth_adapters"
   ],
-  "documentation": "https://github.com/seeloesix/chromacomfort",
+  "documentation": "https://github.com/seeloesix/chromacomfort_hass_int",
   "integration_type": "device",
   "iot_class": "local_polling",
-  "issue_tracker": "https://github.com/seeloesix/chromacomfort/issues",
+  "issue_tracker": "https://github.com/seeloesix/chromacomfort_hass_int/issues",
   "requirements": [
     "bleak>=0.21.0",
     "bleak-retry-connector>=3.4.0"
   ],
-  "version": "1.2.0",
+  "version": "1.2.1",
   "bluetooth": [
     {
       "connectable": true,
