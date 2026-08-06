@@ -212,6 +212,22 @@ status several times a second, the reliable approach is to watch for the
 expected state change and resend if it does not arrive — which is what this
 integration does.
 
+## One connection at a time
+
+The fan accepts a **single Bluetooth connection**, and the vendor phone app wants
+it too. Anything that holds the link permanently makes the app unusable: it will
+still discover the fan, then hang forever on connect.
+
+Worse, an automatic reconnect loop makes this permanent rather than transient —
+it re-takes the connection within seconds of any release, so the app never gets a
+window. If you are writing a controller for this device, connect on demand and
+release promptly.
+
+The advertisement carries only the fan's MAC address as manufacturer data under
+company ID `0x000A` — **no state**. So there is no way to observe the fan
+passively; state can only be read while connected. That is the fundamental
+trade: state freshness costs the app its connection.
+
 ## No pairing required
 
 The BLE control link is open: no pairing, no bonding, no passkey. The PIN

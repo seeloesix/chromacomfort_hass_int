@@ -38,3 +38,22 @@ MAX_BRIGHTNESS: Final = 100
 # COMMAND_GAP is too short here: the activation is dropped if it follows the
 # palette write too closely. The vendor app waits about a second.
 SCENE_STEP_GAP: Final = 1.0
+
+# How long to keep the connection after an operation finishes. The fan accepts
+# only one connection at a time and the vendor app wants it too, so we let go
+# quickly -- but not instantly, or a burst of commands reconnects for each one.
+DISCONNECT_DELAY: Final = 5.0
+
+# Background state refresh. Each poll is a short connect/read/release, during
+# which the phone app cannot connect, so the default is deliberately infrequent;
+# Home Assistant learns the true state whenever it sends a command anyway.
+CONF_SCAN_INTERVAL: Final = "scan_interval"
+DEFAULT_SCAN_INTERVAL: Final = 3600
+SCAN_INTERVAL_OPTIONS: Final = {
+    0: "Never",
+    300: "Every 5 minutes",
+    900: "Every 15 minutes",
+    1800: "Every 30 minutes",
+    3600: "Every hour",
+    7200: "Every 2 hours",
+}

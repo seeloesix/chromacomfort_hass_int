@@ -50,6 +50,7 @@ class StubDevice:
         self.async_set_wall_cycle = AsyncMock()
         self.async_set_scene = AsyncMock()
         self.async_stop_scene = AsyncMock()
+        self.async_turn_color_off = AsyncMock()
         self.scene = None
 
     def register_callback(self, callback):
@@ -186,11 +187,12 @@ class TestColorLightEffects:
         device.async_set_color_light.assert_awaited_with(True, None, (1, 2, 3))
         device.async_set_scene.assert_not_awaited()
 
-    async def test_turn_off_stops_whichever_mode_is_running(self):
-        scene = StubDevice(make_state(p.MASK_USER_PATTERN))
-        await ChromaComfortColorLight(scene).async_turn_off()
-        scene.async_stop_scene.assert_awaited()
-
-        solid = StubDevice(make_state(p.MASK_FAVORITE_1))
-        await ChromaComfortColorLight(solid).async_turn_off()
-        solid.async_set_color_light.assert_awaited_with(False)
+    async def test_turn_off_delegates_the_mode_decision_to_the_device(self):
+        # The entity must not branch on its own cached state: that can predate a
+        # change made from the phone app while we were disconnected.
+        for mask in (p.MASK_USER_PATTERN, p.MASK_FAVORITE_1):
+            device = StubDevice(make_state(mask))
+            await ChromaComfortColorLight(device).async_turn_off()
+            device.async_turn_color_off.assert_awaited()
+            device.async_set_color_light.assert_not_awaited()
+            device.async_stop_scene.assert_not_awaited()

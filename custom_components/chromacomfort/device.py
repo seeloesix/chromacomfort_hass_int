@@ -1,26 +1,30 @@
 """BLE transport for ChromaComfort fans.
 
-The fan streams status notifications continuously while connected, so this holds
-a persistent connection and pushes state to entities rather than polling.
+The fan accepts only one Bluetooth connection at a time, and the vendor phone app
+needs it too. So this connects only when there is something to do and releases a
+few seconds later, rather than holding the link. Between operations Home
+Assistant keeps the last state it saw and tracks the fan by advertisement.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakError
 from bleak_retry_connector import (
     BleakClientWithServiceCache,
-    establish_connection,
     close_stale_connections_by_address,
+    establish_connection,
 )
 
 from . import protocol as p
 from .const import (
     COMMAND_GAP,
+    DISCONNECT_DELAY,
     MAX_BRIGHTNESS,
     MIN_BRIGHTNESS,
     NOTIFY_CHAR_UUID,
@@ -33,7 +37,6 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 CONNECT_TIMEOUT = 20.0
-RECONNECT_DELAY = 10.0
 STATUS_TIMEOUT = 5.0
 
 # How long to wait for a command to show up in the fan's status, and how many
@@ -54,19 +57,33 @@ def brightness_to_ha(value: int) -> int:
 
 
 class ChromaComfortDevice:
-    """Owns the BLE connection to one fan and fans state out to entities."""
+    """Talks to one fan, holding the connection only while it is needed."""
 
-    def __init__(self, ble_device: BLEDevice) -> None:
+    def __init__(
+        self,
+        ble_device: BLEDevice,
+        presence_check: Callable[[], bool] | None = None,
+    ) -> None:
         self._ble_device = ble_device
+        # Answers "is the fan advertising?" without connecting. Entities use it
+        # for availability, since we are disconnected most of the time.
+        self._presence_check = presence_check
         self._client: BleakClientWithServiceCache | None = None
         self._connect_lock = asyncio.Lock()
-        self._write_lock = asyncio.Lock()
+        # Serialises whole command sequences, not individual writes: a scene
+        # upload is several writes with pauses between and must not interleave.
+        self._operation_lock = asyncio.Lock()
         self._callbacks: list[Callable[[], None]] = []
         self._state: p.ChromaComfortState | None = None
-        self._reconnect_task: asyncio.Task | None = None
+        self._release_timer: asyncio.TimerHandle | None = None
+        self._release_task: asyncio.Task | None = None
         self._closing = False
+        # Set when a status frame arrives on the current connection. Cleared on
+        # every connect, because retained state must not be mistaken for the fan
+        # having started streaming again.
+        self._ready = asyncio.Event()
         # The fan reports neither its RGB value nor which scene is loaded, so
-        # track both locally.
+        # track both locally. Like _state, these survive a disconnect.
         self._rgb: tuple[int, int, int] = (255, 255, 255)
         self._scene: str | None = None
 
@@ -80,6 +97,7 @@ class ChromaComfortDevice:
 
     @property
     def state(self) -> p.ChromaComfortState | None:
+        """The last status the fan reported, which may predate the last command."""
         return self._state
 
     @property
@@ -87,8 +105,26 @@ class ChromaComfortDevice:
         return self._rgb
 
     @property
+    def scene(self) -> str | None:
+        """The scene we last started, or None. The fan does not report this."""
+        return self._scene
+
+    @property
+    def connected(self) -> bool:
+        return self._client is not None and self._client.is_connected
+
+    @property
     def available(self) -> bool:
-        return self._client is not None and self._client.is_connected and self._state is not None
+        """Available when the fan is in range and we have seen its state.
+
+        Deliberately not tied to holding a connection -- we release it after
+        every operation, so that would leave entities unavailable almost always.
+        """
+        if self._state is None:
+            return False
+        if self._presence_check is None:
+            return True
+        return self._presence_check()
 
     def set_ble_device(self, ble_device: BLEDevice) -> None:
         """Refresh the BLEDevice from a new advertisement."""
@@ -117,38 +153,33 @@ class ChromaComfortDevice:
         except p.ChromaComfortProtocolError as err:
             _LOGGER.debug("Discarding malformed status frame %s: %s", frame.hex(), err)
             return
+        # Signal readiness on every frame, not just changed ones: the first frame
+        # of a session often matches the state we retained, and that still means
+        # the fan has started streaming and will now accept commands.
+        self._ready.set()
         if state != self._state:
             self._state = state
             self._notify_callbacks()
 
     def _handle_disconnect(self, _client) -> None:
+        """Note the link is gone. Deliberately does not reconnect.
+
+        Reconnecting here is what previously made the fan unusable from the
+        vendor app: the fan allows a single connection, so an automatic retry
+        loop permanently contests it.
+        """
         _LOGGER.debug("%s disconnected", self.address)
         self._client = None
-        self._state = None
+        self._ready.clear()
+        # _state is kept on purpose so entities keep their last known values.
         self._notify_callbacks()
-        if not self._closing:
-            self._schedule_reconnect()
-
-    def _schedule_reconnect(self) -> None:
-        if self._reconnect_task and not self._reconnect_task.done():
-            return
-        self._reconnect_task = asyncio.create_task(self._reconnect())
-
-    async def _reconnect(self) -> None:
-        while not self._closing and self._client is None:
-            await asyncio.sleep(RECONNECT_DELAY)
-            if self._closing:
-                return
-            try:
-                await self.connect()
-            except (BleakError, asyncio.TimeoutError) as err:
-                _LOGGER.debug("Reconnect to %s failed: %s", self.address, err)
 
     async def connect(self) -> None:
-        """Establish the connection and subscribe to status notifications."""
+        """Connect, subscribe, and wait until the fan is actually streaming."""
         async with self._connect_lock:
-            if self._client is not None and self._client.is_connected:
+            if self.connected:
                 return
+            self._ready.clear()
             await close_stale_connections_by_address(self.address)
             client = await establish_connection(
                 BleakClientWithServiceCache,
@@ -163,46 +194,99 @@ class ChromaComfortDevice:
             # process any commands until a client writes the status CCCD.
             await client.start_notify(NOTIFY_CHAR_UUID, self._handle_notification)
             self._client = client
-            # The fan ignores commands sent in the window between the CCCD write
-            # and it starting to stream. It reports several times a second, so
-            # the first frame arriving is a reliable ready signal.
             try:
                 async with asyncio.timeout(STATUS_TIMEOUT):
-                    while self._state is None:
-                        await asyncio.sleep(0.05)
-            except asyncio.TimeoutError:
-                _LOGGER.warning(
-                    "Connected to %s but no status received in %.0fs",
-                    self.address,
-                    STATUS_TIMEOUT,
-                )
+                    await self._ready.wait()
+            except asyncio.TimeoutError as err:
+                # Commands sent now would be silently ignored, so fail loudly
+                # rather than let the caller burn its retries against a fan that
+                # is not listening.
+                await self._disconnect_client(client)
+                raise BleakError(
+                    f"Connected to {self.address} but it never started reporting status"
+                ) from err
             _LOGGER.debug("Connected to %s", self.address)
 
-    async def stop(self) -> None:
-        """Disconnect and stop reconnecting."""
-        self._closing = True
-        if self._reconnect_task:
-            self._reconnect_task.cancel()
-            self._reconnect_task = None
-        if self._client is not None:
-            try:
-                await self._client.disconnect()
-            except BleakError as err:
-                _LOGGER.debug("Error disconnecting %s: %s", self.address, err)
+    async def _disconnect_client(self, client: BleakClientWithServiceCache) -> None:
+        """Unsubscribe and drop the link, tolerating a already-dead connection."""
+        with contextlib.suppress(BleakError, EOFError, asyncio.TimeoutError):
+            await client.stop_notify(NOTIFY_CHAR_UUID)
+        with contextlib.suppress(BleakError, EOFError, asyncio.TimeoutError):
+            await client.disconnect()
+        if self._client is client:
             self._client = None
+            self._ready.clear()
 
-    async def _send(self, frame: bytes) -> None:
-        """Write a command frame, repeated to survive the unreliable transport."""
-        async with self._write_lock:
-            if self._client is None or not self._client.is_connected:
-                await self.connect()
+    def _cancel_release(self) -> None:
+        if self._release_timer is not None:
+            self._release_timer.cancel()
+            self._release_timer = None
+
+    def _schedule_release(self) -> None:
+        """Drop the connection shortly, so the phone app can have the fan."""
+        self._cancel_release()
+        if self._closing or not self.connected:
+            return
+        loop = asyncio.get_running_loop()
+        self._release_timer = loop.call_later(DISCONNECT_DELAY, self._start_release)
+
+    def _start_release(self) -> None:
+        self._release_timer = None
+        self._release_task = asyncio.create_task(self._release())
+
+    async def _release(self) -> None:
+        # Take the operation lock so we never cut a command sequence short; if a
+        # new operation got in first it will have cancelled this timer anyway.
+        async with self._operation_lock:
             client = self._client
             if client is None:
-                raise BleakError(f"Not connected to {self.address}")
-            for index in range(WRITE_REPEATS):
-                await client.write_gatt_char(WRITE_CHAR_UUID, frame, response=False)
-                if index < WRITE_REPEATS - 1:
-                    await asyncio.sleep(WRITE_GAP)
+                return
+            _LOGGER.debug("Releasing connection to %s", self.address)
+            await self._disconnect_client(client)
+            self._notify_callbacks()
+
+    @contextlib.asynccontextmanager
+    async def _operation(self) -> AsyncIterator[None]:
+        """Hold a connection for one logical operation, then arm its release."""
+        self._cancel_release()
+        async with self._operation_lock:
+            self._cancel_release()
+            await self.connect()
+            try:
+                yield
+            finally:
+                self._schedule_release()
+
+    async def stop(self) -> None:
+        """Disconnect and stay disconnected. Used when the entry unloads."""
+        self._closing = True
+        self._cancel_release()
+        if self._release_task is not None:
+            self._release_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._release_task
+            self._release_task = None
+        if self._client is not None:
+            await self._disconnect_client(self._client)
+
+    async def async_refresh_state(self) -> None:
+        """Connect briefly just to read the fan's current state.
+
+        Used by the scheduled poll. Callers treat failure as routine -- the most
+        likely cause is the phone app holding the connection.
+        """
+        async with self._operation():
+            pass
+
+    async def _write(self, frame: bytes) -> None:
+        """Write one frame, repeated to survive the unreliable transport."""
+        client = self._client
+        if client is None:
+            raise BleakError(f"Not connected to {self.address}")
+        for index in range(WRITE_REPEATS):
+            await client.write_gatt_char(WRITE_CHAR_UUID, frame, response=False)
+            if index < WRITE_REPEATS - 1:
+                await asyncio.sleep(WRITE_GAP)
 
     async def _confirmed(
         self, frame: bytes, expected: Callable[[p.ChromaComfortState], bool]
@@ -214,7 +298,7 @@ class ChromaComfortDevice:
         several times a second, so we can just watch for the change and retry.
         """
         for attempt in range(CONFIRM_ATTEMPTS):
-            await self._send(frame)
+            await self._write(frame)
             deadline = asyncio.get_running_loop().time() + CONFIRM_TIMEOUT
             while asyncio.get_running_loop().time() < deadline:
                 if self._state is not None and expected(self._state):
@@ -229,22 +313,24 @@ class ChromaComfortDevice:
         _LOGGER.warning("Fan %s did not apply command %s", self.address, frame.hex())
 
     async def async_set_fan(self, on: bool) -> None:
-        await self._confirmed(
-            p.build_command(p.CMD_FAN_ON if on else p.CMD_FAN_OFF),
-            lambda state: state.fan_on is on,
-        )
+        async with self._operation():
+            await self._confirmed(
+                p.build_command(p.CMD_FAN_ON if on else p.CMD_FAN_OFF),
+                lambda state: state.fan_on is on,
+            )
 
     async def async_set_white_light(self, on: bool, brightness: int | None = None) -> None:
-        if not on:
+        async with self._operation():
+            if not on:
+                await self._confirmed(
+                    p.build_command(p.CMD_LIGHT_OFF), lambda state: not state.light_on
+                )
+                return
+            dimmer = brightness_to_device(brightness) if brightness is not None else 0
             await self._confirmed(
-                p.build_command(p.CMD_LIGHT_OFF), lambda state: not state.light_on
+                p.build_command(p.CMD_LIGHT_ON, dimmer=dimmer),
+                lambda state: state.light_on and (dimmer == 0 or state.brightness == dimmer),
             )
-            return
-        dimmer = brightness_to_device(brightness) if brightness is not None else 0
-        await self._confirmed(
-            p.build_command(p.CMD_LIGHT_ON, dimmer=dimmer),
-            lambda state: state.light_on and (dimmer == 0 or state.brightness == dimmer),
-        )
 
     async def async_set_color_light(
         self,
@@ -252,35 +338,56 @@ class ChromaComfortDevice:
         brightness: int | None = None,
         rgb: tuple[int, int, int] | None = None,
     ) -> None:
-        if not on:
+        async with self._operation():
+            if not on:
+                await self._confirmed(
+                    p.build_command(p.CMD_FAVORITE_OFF), lambda state: not state.favorite_1_on
+                )
+                return
+            if rgb is not None:
+                self._rgb = rgb
+                # Saving a colour produces no status change, so it cannot be
+                # confirmed; send it and give the fan time before activating.
+                await self._write(p.save_favorite_color(*rgb))
+                await asyncio.sleep(COMMAND_GAP)
+            dimmer = brightness_to_device(brightness) if brightness is not None else 0
             await self._confirmed(
-                p.build_command(p.CMD_FAVORITE_OFF), lambda state: not state.favorite_1_on
+                p.build_command(p.CMD_FAVORITE_ON, dimmer=dimmer),
+                lambda state: state.favorite_1_on and (dimmer == 0 or state.brightness == dimmer),
             )
-            return
-        if rgb is not None:
-            self._rgb = rgb
-            # Saving a colour produces no status change, so it cannot be
-            # confirmed; send it and give the fan time before activating.
-            await self._send(p.save_favorite_color(*rgb))
-            await asyncio.sleep(COMMAND_GAP)
-        dimmer = brightness_to_device(brightness) if brightness is not None else 0
-        await self._confirmed(
-            p.build_command(p.CMD_FAVORITE_ON, dimmer=dimmer),
-            lambda state: state.favorite_1_on and (dimmer == 0 or state.brightness == dimmer),
-        )
 
     async def async_set_wall_cycle(self, on: bool) -> None:
-        await self._confirmed(
-            p.build_command(p.CMD_WALL_RGB_ON if on else p.CMD_WALL_RGB_OFF),
-            lambda state: state.wall_rgb_on is on,
-        )
+        async with self._operation():
+            await self._confirmed(
+                p.build_command(p.CMD_WALL_RGB_ON if on else p.CMD_WALL_RGB_OFF),
+                lambda state: state.wall_rgb_on is on,
+            )
 
     async def async_stop_scene(self) -> None:
         """Stop scene playback."""
-        await self._confirmed(
-            p.build_command(p.CMD_PATTERN_OFF), lambda state: not state.user_pattern_on
-        )
+        async with self._operation():
+            await self._confirmed(
+                p.build_command(p.CMD_PATTERN_OFF), lambda state: not state.user_pattern_on
+            )
         self._scene = None
+
+    async def async_turn_color_off(self) -> None:
+        """Turn the colour lamp off, whichever mode it is currently in.
+
+        Decided inside the operation so the choice is made against status read on
+        this connection, not against whatever was cached before it.
+        """
+        async with self._operation():
+            if self._state is not None and self._state.user_pattern_on:
+                await self._confirmed(
+                    p.build_command(p.CMD_PATTERN_OFF),
+                    lambda state: not state.user_pattern_on,
+                )
+                self._scene = None
+                return
+            await self._confirmed(
+                p.build_command(p.CMD_FAVORITE_OFF), lambda state: not state.favorite_1_on
+            )
 
     async def async_set_scene(self, name: str, brightness: int | None = None) -> None:
         """Upload a scene's palette to the fan and start playing it.
@@ -292,16 +399,14 @@ class ChromaComfortDevice:
         first, second = p.scene_frames(name)
         dimmer = brightness_to_device(brightness) if brightness is not None else MAX_BRIGHTNESS
 
-        await self._send(p.build_command(p.CMD_PATTERN_OFF, dimmer=MIN_BRIGHTNESS))
-        await asyncio.sleep(SCENE_STEP_GAP)
+        async with self._operation():
+            await self._write(p.build_command(p.CMD_PATTERN_OFF, dimmer=MIN_BRIGHTNESS))
+            await asyncio.sleep(SCENE_STEP_GAP)
 
-        # The two frames are a unit -- the second carries colour data where the
-        # opcode would be, so it only means anything directly after the first.
-        # The app writes the pair three times rather than each frame three
-        # times, and waits for no acknowledgement.
-        async with self._write_lock:
-            if self._client is None or not self._client.is_connected:
-                await self.connect()
+            # The two frames are a unit -- the second carries colour data where
+            # the opcode would be, so it only means anything directly after the
+            # first. The app writes the pair three times rather than each frame
+            # three times, and waits for no acknowledgement.
             client = self._client
             if client is None:
                 raise BleakError(f"Not connected to {self.address}")
@@ -310,17 +415,12 @@ class ChromaComfortDevice:
                 await asyncio.sleep(WRITE_GAP)
                 await client.write_gatt_char(WRITE_CHAR_UUID, second, response=False)
                 await asyncio.sleep(WRITE_GAP)
-        await asyncio.sleep(SCENE_STEP_GAP)
+            await asyncio.sleep(SCENE_STEP_GAP)
 
-        await self._confirmed(
-            p.build_command(
-                p.CMD_PATTERN_ON, dimmer=dimmer, speed=p.scene_cycle_seconds(name)
-            ),
-            lambda state: state.user_pattern_on,
-        )
+            await self._confirmed(
+                p.build_command(
+                    p.CMD_PATTERN_ON, dimmer=dimmer, speed=p.scene_cycle_seconds(name)
+                ),
+                lambda state: state.user_pattern_on,
+            )
         self._scene = name
-
-    @property
-    def scene(self) -> str | None:
-        """The scene we last started, or None. The fan does not report this."""
-        return self._scene
