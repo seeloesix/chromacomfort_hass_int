@@ -118,8 +118,7 @@ class ChromaComfortColorLight(ChromaComfortEntity, LightEntity):
         )
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        state = self._device.state
-        if state is not None and state.user_pattern_on:
-            await self._device.async_stop_scene()
-            return
-        await self._device.async_set_color_light(False)
+        # The device decides between stopping a scene and clearing the solid
+        # colour, because that has to be judged against state read on the same
+        # connection -- ours here may predate the last change made in the app.
+        await self._device.async_turn_color_off()

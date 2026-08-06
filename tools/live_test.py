@@ -136,6 +136,22 @@ async def main(address: str) -> int:
         check("scene stopped", bool(device.state and not device.state.user_pattern_on))
         check("scene name cleared", device.scene is None)
 
+        print("\nConnection release (the whole point of v1.2)")
+        await device.async_set_fan(True)
+        check("connected during an operation", device.connected)
+        released = False
+        for _ in range(40):  # DISCONNECT_DELAY is 5s; allow 20s
+            await asyncio.sleep(0.5)
+            if not device.connected:
+                released = True
+                break
+        check("connection released after idle", released)
+        check("state retained while disconnected", device.state is not None)
+        check("still available while disconnected", device.available)
+        check("fan state still correct", bool(device.state and device.state.fan_on))
+        await device.async_set_fan(False)
+        check("reconnects for the next command", bool(device.state and not device.state.fan_on))
+
         print("\nMutual exclusivity")
         await device.async_set_white_light(True, brightness=255)
         await settle(device)

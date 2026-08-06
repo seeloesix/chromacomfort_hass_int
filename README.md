@@ -43,13 +43,34 @@ app last stored. Adding your own is a few lines in `protocol.py` —
 in seconds. Bear in mind the fan gamma-encodes colours steeply, so saturated,
 high-value channels read far better than pastels.
 
-State is **pushed**, not polled: the fan streams its status several times a
-second, so changes made at the wall switch or from the vendor app show up in
-Home Assistant immediately.
-
 The three light modes are mutually exclusive in the fan's own firmware — turning
 on the colour light switches off the white light, and vice versa. The entities
 reflect whatever the fan reports.
+
+## Sharing the fan with the phone app
+
+The fan accepts **one Bluetooth connection at a time**. So this integration
+connects only when it has something to do and releases about five seconds later,
+which leaves the ChromaComfort app free to work in between.
+
+What that means in practice:
+
+- Home Assistant reads the fan's true state every time it sends a command, so
+  after any action the state shown is correct.
+- Between commands, Home Assistant shows the **last state it saw**. If you change
+  something from the app or the wall switch, it will not notice until it next
+  connects.
+- To bound that staleness there is a periodic state refresh, **hourly by
+  default**. Change it under the integration's **Configure** button — anywhere
+  from every 5 minutes to never. Each refresh briefly takes the connection, so
+  shorter intervals mean more chance of interrupting an app session.
+- Entities stay **available** while disconnected, as long as the fan is still
+  advertising.
+- Changing a scene holds the connection for a few seconds — longer than other
+  commands, because the palette upload is a multi-step sequence.
+
+If the app is connected when Home Assistant tries to refresh, the refresh is
+skipped silently and retried at the next interval.
 
 ## Supported models
 

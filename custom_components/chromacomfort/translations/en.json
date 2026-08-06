@@ -34,9 +34,17 @@
     "switch": {
       "color_cycle": {
         "name": "Color cycle"
-      },
-      "scene": {
-        "name": "Scene"
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "ChromaComfort options",
+        "description": "How often should Home Assistant re-read the fan's state? Each check briefly takes the fan's Bluetooth connection, during which the ChromaComfort phone app cannot control it. Home Assistant reads the state whenever it sends a command regardless, so a long interval is usually fine.",
+        "data": {
+          "scan_interval": "State refresh interval"
+        }
       }
     }
   }
