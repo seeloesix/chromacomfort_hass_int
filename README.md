@@ -1,4 +1,4 @@
-<img src="assets/icon@2x.png" alt="ChromaComfort icon" width="128" align="right">
+<img src="custom_components/chromacomfort/brand/icon@2x.png" alt="ChromaComfort icon" width="128" align="right">
 
 # ChromaComfort for Home Assistant
 
