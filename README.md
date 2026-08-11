@@ -1,4 +1,4 @@
-<img src="custom_components/chromacomfort/brand/icon@2x.png" alt="ChromaComfort icon" width="128" align="right">
+<img src="https://raw.githubusercontent.com/seeloesix/chromacomfort_hass_int/main/custom_components/chromacomfort/brand/icon@2x.png" alt="ChromaComfort icon" width="128" align="right">
 
 # ChromaComfort for Home Assistant
 
@@ -8,7 +8,7 @@ over BLE.
 
 [![hacs][hacs-badge]][hacs]
 [![release][release-badge]][releases]
-[![license][license-badge]](LICENSE)
+[![license][license-badge]](https://github.com/seeloesix/chromacomfort_hass_int/blob/main/LICENSE)
 
 ## What you get
 
