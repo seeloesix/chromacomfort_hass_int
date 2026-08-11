@@ -19,7 +19,7 @@ from .device import ChromaComfortDevice
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.FAN, Platform.LIGHT, Platform.SWITCH]
+PLATFORMS: list[Platform] = [Platform.FAN, Platform.LIGHT, Platform.SELECT, Platform.SWITCH]
 
 # Hard ceiling on a whole background refresh, comfortably above the worst-case
 # bounded connect (retry attempts x CONNECT_TIMEOUT in the device layer).

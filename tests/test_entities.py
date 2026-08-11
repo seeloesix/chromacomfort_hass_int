@@ -25,6 +25,7 @@ from chromacomfort import protocol as p  # noqa: E402
 from chromacomfort.config_flow import _display_name  # noqa: E402
 from chromacomfort.fan import ChromaComfortFan  # noqa: E402
 from chromacomfort.light import ChromaComfortColorLight, ChromaComfortWhiteLight  # noqa: E402
+from chromacomfort.select import OPTION_OFF, ChromaComfortSceneSelect  # noqa: E402
 from chromacomfort.switch import ChromaComfortColorCycle  # noqa: E402
 
 ADDRESS = "AA:BB:CC:DD:EE:FF"
@@ -150,9 +151,60 @@ class TestUniqueIds:
             ChromaComfortFan(device).unique_id,
             ChromaComfortWhiteLight(device).unique_id,
             ChromaComfortColorLight(device).unique_id,
+            ChromaComfortSceneSelect(device).unique_id,
             ChromaComfortColorCycle(device).unique_id,
         }
-        assert len(ids) == 4
+        assert len(ids) == 5
+
+
+class TestSceneSelect:
+    def test_options_are_off_plus_every_scene(self):
+        entity = ChromaComfortSceneSelect(StubDevice(make_state(0)))
+        assert entity.options[0] == OPTION_OFF
+        assert set(entity.options[1:]) == set(p.BUILTIN_SCENES)
+
+    def test_reports_off_when_no_scene_runs(self):
+        assert ChromaComfortSceneSelect(StubDevice(make_state(0))).current_option == OPTION_OFF
+        assert (
+            ChromaComfortSceneSelect(StubDevice(make_state(p.MASK_FAVORITE_1))).current_option
+            == OPTION_OFF
+        )
+
+    def test_reports_running_scene(self):
+        device = StubDevice(make_state(p.MASK_USER_PATTERN))
+        device.scene = "Rainbow"
+        assert ChromaComfortSceneSelect(device).current_option == "Rainbow"
+
+    def test_reports_unknown_for_a_scene_started_by_the_app(self):
+        # The fan does not say which scene is loaded; if playback started
+        # outside Home Assistant, the honest answer is unknown.
+        device = StubDevice(make_state(p.MASK_USER_PATTERN))
+        device.scene = None
+        assert ChromaComfortSceneSelect(device).current_option is None
+
+    def test_unknown_before_first_status(self):
+        assert ChromaComfortSceneSelect(StubDevice(None)).current_option is None
+
+    async def test_selecting_a_scene_starts_it(self):
+        device = StubDevice(make_state(0))
+        entity = ChromaComfortSceneSelect(device)
+        await entity.async_select_option("Christmas")
+        device.async_set_scene.assert_awaited_with("Christmas")
+        device.async_stop_scene.assert_not_awaited()
+
+    async def test_selecting_off_stops_playback(self):
+        device = StubDevice(make_state(p.MASK_USER_PATTERN))
+        entity = ChromaComfortSceneSelect(device)
+        await entity.async_select_option(OPTION_OFF)
+        device.async_stop_scene.assert_awaited()
+        device.async_set_scene.assert_not_awaited()
+
+    async def test_transport_failure_surfaces_cleanly(self):
+        device = StubDevice(make_state(0))
+        device.async_set_scene.side_effect = BleakError("busy")
+        entity = ChromaComfortSceneSelect(device)
+        with pytest.raises(HomeAssistantError):
+            await entity.async_select_option("Spa")
 
 
 
