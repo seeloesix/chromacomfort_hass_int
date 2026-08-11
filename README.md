@@ -1,4 +1,4 @@
-<img src="https://cdn.jsdelivr.net/gh/seeloesix/chromacomfort_hass_int@main/custom_components/chromacomfort/brand/icon@2x.png" alt="ChromaComfort icon" width="128" align="right">
+<img src="https://raw.githubusercontent.com/seeloesix/chromacomfort_hass_int/main/custom_components/chromacomfort/brand/icon.png" alt="ChromaComfort icon" title="ChromaComfort" align="right" width="128" />
 
 # ChromaComfort for Home Assistant
 
