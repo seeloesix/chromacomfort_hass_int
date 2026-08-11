@@ -39,10 +39,20 @@ _LOGGER = logging.getLogger(__name__)
 CONNECT_TIMEOUT = 20.0
 STATUS_TIMEOUT = 5.0
 
+# Ceiling on any single GATT operation. Without it a peripheral that accepts the
+# connection but stops servicing requests wedges the operation lock forever,
+# taking every entity with it until Home Assistant restarts.
+BLE_OP_TIMEOUT = 10.0
+
 # How long to wait for a command to show up in the fan's status, and how many
 # times to resend before giving up.
 CONFIRM_TIMEOUT = 1.5
 CONFIRM_ATTEMPTS = 3
+
+# Floor between entity update fan-outs. The fan itself reports about once a
+# second; anything faster is a misbehaving or hostile peripheral, which must not
+# be able to flood the Home Assistant event bus through us.
+NOTIFY_MIN_INTERVAL = 0.25
 
 
 def brightness_to_device(value: int) -> int:
@@ -76,7 +86,13 @@ class ChromaComfortDevice:
         self._callbacks: list[Callable[[], None]] = []
         self._state: p.ChromaComfortState | None = None
         self._release_timer: asyncio.TimerHandle | None = None
-        self._release_task: asyncio.Task | None = None
+        # Strong references, because asyncio itself only keeps weak ones. The
+        # generation counter lets a new operation void a release that is already
+        # past its timer but still waiting on the operation lock.
+        self._release_tasks: set[asyncio.Task] = set()
+        self._release_generation = 0
+        self._notify_flush_timer: asyncio.TimerHandle | None = None
+        self._last_notify = 0.0
         self._closing = False
         # Set when a status frame arrives on the current connection. Cleared on
         # every connect, because retained state must not be mistaken for the fan
@@ -114,6 +130,11 @@ class ChromaComfortDevice:
         return self._client is not None and self._client.is_connected
 
     @property
+    def busy(self) -> bool:
+        """True while a command sequence or refresh holds the operation lock."""
+        return self._operation_lock.locked()
+
+    @property
     def available(self) -> bool:
         """Available when the fan is in range and we have seen its state.
 
@@ -141,8 +162,41 @@ class ChromaComfortDevice:
         return unregister
 
     def _notify_callbacks(self) -> None:
-        for callback in self._callbacks:
-            callback()
+        # Iterate a copy with per-callback isolation: one raising entity must not
+        # silence the others, and a callback that unregisters during the fan-out
+        # must not shift the list under the loop.
+        for callback in list(self._callbacks):
+            try:
+                callback()
+            except Exception:  # noqa: BLE001 - isolate misbehaving subscribers
+                _LOGGER.exception("State callback for %s failed", self.address)
+
+    def _dispatch_state_change(self) -> None:
+        """Fan out a state change, rate-limited to NOTIFY_MIN_INTERVAL.
+
+        Trailing-edge: a burst inside the window schedules exactly one flush at
+        its end, so the final state always lands but a peripheral streaming
+        alternating frames cannot drive unbounded event-bus churn.
+        """
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # No loop means no bleak and no event bus to protect (direct calls
+            # from synchronous tests); deliver immediately.
+            self._notify_callbacks()
+            return
+        now = loop.time()
+        if now - self._last_notify >= NOTIFY_MIN_INTERVAL:
+            self._last_notify = now
+            self._notify_callbacks()
+        elif self._notify_flush_timer is None:
+            delay = NOTIFY_MIN_INTERVAL - (now - self._last_notify)
+            self._notify_flush_timer = loop.call_later(delay, self._flush_notify)
+
+    def _flush_notify(self) -> None:
+        self._notify_flush_timer = None
+        self._last_notify = asyncio.get_running_loop().time()
+        self._notify_callbacks()
 
     def _handle_notification(self, _sender, data: bytearray) -> None:
         frame = bytes(data)
@@ -159,7 +213,7 @@ class ChromaComfortDevice:
         self._ready.set()
         if state != self._state:
             self._state = state
-            self._notify_callbacks()
+            self._dispatch_state_change()
 
     def _handle_disconnect(self, _client) -> None:
         """Note the link is gone. Deliberately does not reconnect.
@@ -192,7 +246,17 @@ class ChromaComfortDevice:
             )
             # Subscribing is not just how we read state -- the fan does not
             # process any commands until a client writes the status CCCD.
-            await client.start_notify(NOTIFY_CHAR_UUID, self._handle_notification)
+            try:
+                async with asyncio.timeout(BLE_OP_TIMEOUT):
+                    await client.start_notify(NOTIFY_CHAR_UUID, self._handle_notification)
+            except asyncio.TimeoutError as err:
+                await self._disconnect_client(client)
+                raise BleakError(f"Subscribing to {self.address} timed out") from err
+            if not client.is_connected:
+                # The fan dropped the link mid-handshake; _handle_disconnect has
+                # already run, so installing this handle would resurrect a dead
+                # connection.
+                raise BleakError(f"{self.address} disconnected during setup")
             self._client = client
             try:
                 async with asyncio.timeout(STATUS_TIMEOUT):
@@ -210,9 +274,11 @@ class ChromaComfortDevice:
     async def _disconnect_client(self, client: BleakClientWithServiceCache) -> None:
         """Unsubscribe and drop the link, tolerating a already-dead connection."""
         with contextlib.suppress(BleakError, EOFError, asyncio.TimeoutError):
-            await client.stop_notify(NOTIFY_CHAR_UUID)
+            async with asyncio.timeout(BLE_OP_TIMEOUT):
+                await client.stop_notify(NOTIFY_CHAR_UUID)
         with contextlib.suppress(BleakError, EOFError, asyncio.TimeoutError):
-            await client.disconnect()
+            async with asyncio.timeout(BLE_OP_TIMEOUT):
+                await client.disconnect()
         if self._client is client:
             self._client = None
             self._ready.clear()
@@ -221,6 +287,10 @@ class ChromaComfortDevice:
         if self._release_timer is not None:
             self._release_timer.cancel()
             self._release_timer = None
+        # Void any release already past its timer but still queued on the
+        # operation lock; when it finally runs it will see a newer generation
+        # and leave the connection alone.
+        self._release_generation += 1
 
     def _schedule_release(self) -> None:
         """Drop the connection shortly, so the phone app can have the fan."""
@@ -232,12 +302,17 @@ class ChromaComfortDevice:
 
     def _start_release(self) -> None:
         self._release_timer = None
-        self._release_task = asyncio.create_task(self._release())
+        task = asyncio.create_task(self._release(self._release_generation))
+        self._release_tasks.add(task)
+        task.add_done_callback(self._release_tasks.discard)
 
-    async def _release(self) -> None:
+    async def _release(self, generation: int) -> None:
         # Take the operation lock so we never cut a command sequence short; if a
-        # new operation got in first it will have cancelled this timer anyway.
+        # new operation got in first, the generation has moved on and this
+        # release no longer speaks for the current connection.
         async with self._operation_lock:
+            if generation != self._release_generation:
+                return
             client = self._client
             if client is None:
                 return
@@ -261,13 +336,20 @@ class ChromaComfortDevice:
         """Disconnect and stay disconnected. Used when the entry unloads."""
         self._closing = True
         self._cancel_release()
-        if self._release_task is not None:
-            self._release_task.cancel()
+        if self._notify_flush_timer is not None:
+            self._notify_flush_timer.cancel()
+            self._notify_flush_timer = None
+        for task in list(self._release_tasks):
+            task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
-                await self._release_task
-            self._release_task = None
-        if self._client is not None:
-            await self._disconnect_client(self._client)
+                await task
+        self._release_tasks.clear()
+        # Take the operation lock so unload cannot cut a scene upload or other
+        # command sequence mid-write. Operations are individually timed out, so
+        # this cannot block indefinitely.
+        async with self._operation_lock:
+            if self._client is not None:
+                await self._disconnect_client(self._client)
 
     async def async_refresh_state(self) -> None:
         """Connect briefly just to read the fan's current state.
@@ -284,7 +366,8 @@ class ChromaComfortDevice:
         if client is None:
             raise BleakError(f"Not connected to {self.address}")
         for index in range(WRITE_REPEATS):
-            await client.write_gatt_char(WRITE_CHAR_UUID, frame, response=False)
+            async with asyncio.timeout(BLE_OP_TIMEOUT):
+                await client.write_gatt_char(WRITE_CHAR_UUID, frame, response=False)
             if index < WRITE_REPEATS - 1:
                 await asyncio.sleep(WRITE_GAP)
 
@@ -317,7 +400,9 @@ class ChromaComfortDevice:
                 attempt + 1,
                 CONFIRM_ATTEMPTS,
             )
-        _LOGGER.warning("Fan %s did not apply command %s", self.address, frame.hex())
+        # INFO, not WARNING: this fires on routine contention (the phone app
+        # holding the fan), and warnings end up pasted into bug reports.
+        _LOGGER.info("Fan %s did not apply command %s", self.address, frame.hex())
 
     async def async_set_fan(self, on: bool) -> None:
         async with self._operation():
@@ -418,9 +503,11 @@ class ChromaComfortDevice:
             if client is None:
                 raise BleakError(f"Not connected to {self.address}")
             for _ in range(WRITE_REPEATS):
-                await client.write_gatt_char(WRITE_CHAR_UUID, first, response=False)
+                async with asyncio.timeout(BLE_OP_TIMEOUT):
+                    await client.write_gatt_char(WRITE_CHAR_UUID, first, response=False)
                 await asyncio.sleep(WRITE_GAP)
-                await client.write_gatt_char(WRITE_CHAR_UUID, second, response=False)
+                async with asyncio.timeout(BLE_OP_TIMEOUT):
+                    await client.write_gatt_char(WRITE_CHAR_UUID, second, response=False)
                 await asyncio.sleep(WRITE_GAP)
             await asyncio.sleep(SCENE_STEP_GAP)
 

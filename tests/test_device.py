@@ -194,3 +194,142 @@ class TestCachedValues:
         device._handle_disconnect(None)
         assert device.rgb == (1, 2, 3)
         assert device.scene == "Rainbow"
+
+
+class TestNotificationFlood:
+    """A hostile peripheral must not drive unbounded entity churn through us."""
+
+    async def test_rapid_state_changes_are_debounced(self):
+        device = make_device()
+        calls = []
+        device.register_callback(lambda: calls.append(1))
+
+        # Alternate two valid states as fast as a hostile peripheral could.
+        for i in range(50):
+            device._handle_notification(
+                None, status_frame(p.MASK_FAN if i % 2 else 0)
+            )
+        # First change fires immediately; the rest of the burst collapses into
+        # one pending trailing flush.
+        assert len(calls) == 1
+        await asyncio.sleep(device_mod.NOTIFY_MIN_INTERVAL * 2)
+        assert len(calls) == 2, "the final state must still land, exactly once"
+
+    async def test_spaced_changes_pass_through(self):
+        device = make_device()
+        calls = []
+        device.register_callback(lambda: calls.append(1))
+
+        device._handle_notification(None, status_frame(p.MASK_FAN))
+        await asyncio.sleep(device_mod.NOTIFY_MIN_INTERVAL * 1.5)
+        device._handle_notification(None, status_frame(0))
+        assert len(calls) == 2
+
+
+class TestCallbackIsolation:
+    def test_one_raising_callback_does_not_silence_the_rest(self):
+        device = make_device()
+        calls = []
+
+        def bad() -> None:
+            raise RuntimeError("boom")
+
+        device.register_callback(bad)
+        device.register_callback(lambda: calls.append(1))
+        device._handle_notification(None, status_frame(p.MASK_FAN))
+        assert calls == [1]
+
+    def test_callback_unregistering_during_fanout_is_safe(self):
+        device = make_device()
+        calls = []
+        unregister_holder = []
+
+        def self_removing() -> None:
+            calls.append("first")
+            unregister_holder[0]()
+
+        unregister_holder.append(device.register_callback(self_removing))
+        device.register_callback(lambda: calls.append("second"))
+        device._handle_notification(None, status_frame(p.MASK_FAN))
+        assert calls == ["first", "second"]
+
+
+class TestWriteTimeout:
+    """A stalled peripheral must fail the operation, not wedge the lock."""
+
+    async def test_hung_write_times_out_and_releases_the_lock(self, monkeypatch):
+        monkeypatch.setattr(device_mod, "BLE_OP_TIMEOUT", 0.05)
+        device = make_device()
+
+        class HungClient:
+            is_connected = True
+
+            async def write_gatt_char(self, *args, **kwargs):
+                await asyncio.sleep(60)
+
+        device._client = HungClient()
+        with pytest.raises(asyncio.TimeoutError):
+            await device._write(b"\x00" * 19)
+        assert not device._operation_lock.locked()
+
+    async def test_stalled_release_cannot_block_forever(self, monkeypatch):
+        monkeypatch.setattr(device_mod, "BLE_OP_TIMEOUT", 0.05)
+        device = make_device()
+
+        class HungClient:
+            is_connected = True
+
+            async def stop_notify(self, *args, **kwargs):
+                await asyncio.sleep(60)
+
+            async def disconnect(self):
+                await asyncio.sleep(60)
+
+        client = HungClient()
+        device._client = client
+        # Both awaits time out and are suppressed; the client is dropped.
+        await asyncio.wait_for(device._disconnect_client(client), timeout=1.0)
+        assert device._client is None
+
+
+class TestReleaseGeneration:
+    """A release that lost the race must leave the new connection alone."""
+
+    async def test_voided_release_does_not_disconnect(self):
+        device = make_device()
+        disconnected = []
+
+        class FakeClient:
+            is_connected = True
+
+            async def stop_notify(self, *args, **kwargs):
+                disconnected.append("stop_notify")
+
+            async def disconnect(self):
+                disconnected.append("disconnect")
+
+        device._client = FakeClient()
+        generation = device._release_generation
+        # A new operation intervenes before the release task runs.
+        device._cancel_release()
+        await device._release(generation)
+        assert disconnected == []
+        assert device._client is not None
+
+    async def test_current_release_disconnects(self):
+        device = make_device()
+        disconnected = []
+
+        class FakeClient:
+            is_connected = True
+
+            async def stop_notify(self, *args, **kwargs):
+                disconnected.append("stop_notify")
+
+            async def disconnect(self):
+                disconnected.append("disconnect")
+
+        device._client = FakeClient()
+        await device._release(device._release_generation)
+        assert disconnected == ["stop_notify", "disconnect"]
+        assert device._client is None

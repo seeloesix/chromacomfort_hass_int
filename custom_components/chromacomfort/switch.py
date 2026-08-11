@@ -42,8 +42,8 @@ class ChromaComfortColorCycle(ChromaComfortEntity, SwitchEntity):
         return None if state is None else state.wall_rgb_on
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        await self._device.async_set_wall_cycle(True)
+        await self._run_command(self._device.async_set_wall_cycle(True))
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        await self._device.async_set_wall_cycle(False)
+        await self._run_command(self._device.async_set_wall_cycle(False))
 

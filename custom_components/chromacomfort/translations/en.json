@@ -12,9 +12,20 @@
         "description": "Choose a ChromaComfort fan to add."
       }
     },
+    "error": {
+      "device_not_found": "That device is not among the discovered fans. Choose one from the list."
+    },
     "abort": {
       "no_devices_found": "No ChromaComfort fans found. Make sure the fan has power and is in range of a Bluetooth adapter or proxy.",
       "already_configured": "This fan is already set up."
+    }
+  },
+  "exceptions": {
+    "cannot_connect": {
+      "message": "Could not reach {name}. The fan accepts a single Bluetooth connection, so this usually means the ChromaComfort phone app is connected to it right now, or the fan is out of range."
+    },
+    "unknown_effect": {
+      "message": "{effect} is not one of this light's effects. Pick a name from the effect list."
     }
   },
   "entity": {

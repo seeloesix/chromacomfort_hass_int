@@ -10,6 +10,7 @@ the callback fan-out and brightness conversions, then restores the fan to off.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import sys
 from pathlib import Path
 
@@ -45,7 +46,7 @@ def check(name: str, ok: bool, detail: str = "") -> None:
     print(f"  [{PASS if ok else FAIL}] {name}{'  ' + detail if detail else ''}")
 
 
-async def settle(device: ChromaComfortDevice, seconds: float = 3.5) -> None:
+async def settle(seconds: float = 3.5) -> None:
     await asyncio.sleep(seconds)
 
 
@@ -70,69 +71,79 @@ async def main(address: str) -> int:
         updates += 1
 
     device.register_callback(on_update)
-    await device.connect()
-    await settle(device, 2.0)
+    try:
+        await device.connect()
+    except Exception as err:  # noqa: BLE001 - report, don't traceback
+        print(f"  Could not connect: {err}")
+        await device.stop()
+        return 1
+    await settle(2.0)
 
     check("connected and reporting status", device.available)
     check("callback fired on first status", updates > 0, f"({updates} updates)")
     print(f"  initial state: {device.state}")
+    if not device.available:
+        print("  Fan is not reporting status; aborting before the command tests.")
+        await device.stop()
+        return 1
 
+    completed = False
     try:
         print("\nFan")
         await device.async_set_fan(True)
-        await settle(device)
+        await settle()
         check("fan reports on", bool(device.state and device.state.fan_on))
         await device.async_set_fan(False)
-        await settle(device)
+        await settle()
         check("fan reports off", bool(device.state and not device.state.fan_on))
 
         print("\nWhite light")
         await device.async_set_white_light(True, brightness=255)
-        await settle(device)
+        await settle()
         check("white light on", bool(device.state and device.state.light_on))
         check(
             "brightness reports 255",
             bool(device.state and brightness_to_ha(device.state.brightness) == 255),
-            f"(device={device.state.brightness}%)",
+            f"(device={device.state.brightness if device.state else '?'}%)",
         )
         await device.async_set_white_light(True, brightness=64)
-        await settle(device)
+        await settle()
         check(
             "dimmed to ~25%",
             bool(device.state and 20 <= device.state.brightness <= 30),
-            f"(device={device.state.brightness}%)",
+            f"(device={device.state.brightness if device.state else '?'}%)",
         )
         await device.async_set_white_light(False)
-        await settle(device)
+        await settle()
         check("white light off", bool(device.state and not device.state.light_on))
 
         print("\nColor light")
         await device.async_set_color_light(True, brightness=200, rgb=(0, 255, 128))
-        await settle(device)
+        await settle()
         check("color light on", bool(device.state and device.state.favorite_1_on))
         check("rgb tracked locally", device.rgb == (0, 255, 128), f"{device.rgb}")
         await device.async_set_color_light(False)
-        await settle(device)
+        await settle()
         check("color light off", bool(device.state and not device.state.favorite_1_on))
 
         print("\nColor cycle")
         await device.async_set_wall_cycle(True)
-        await settle(device)
+        await settle()
         check("cycle on", bool(device.state and device.state.wall_rgb_on))
         await device.async_set_wall_cycle(False)
-        await settle(device)
+        await settle()
         check("cycle off", bool(device.state and not device.state.wall_rgb_on))
 
         print("\nScenes")
         await device.async_set_scene("Halloween", brightness=255)
-        await settle(device)
+        await settle()
         check("scene playing", bool(device.state and device.state.user_pattern_on))
         check("scene name tracked", device.scene == "Halloween", f"{device.scene}")
         await device.async_set_scene("Rainbow", brightness=255)
-        await settle(device)
+        await settle()
         check("switched scene", device.scene == "Rainbow" and bool(device.state and device.state.user_pattern_on))
         await device.async_stop_scene()
-        await settle(device)
+        await settle()
         check("scene stopped", bool(device.state and not device.state.user_pattern_on))
         check("scene name cleared", device.scene is None)
 
@@ -154,16 +165,29 @@ async def main(address: str) -> int:
 
         print("\nMutual exclusivity")
         await device.async_set_white_light(True, brightness=255)
-        await settle(device)
+        await settle()
         await device.async_set_color_light(True, brightness=255)
-        await settle(device)
+        await settle()
         check(
             "color light replaces white light",
             bool(device.state and device.state.favorite_1_on and not device.state.light_on),
         )
         await device.async_set_color_light(False)
-        await settle(device)
+        await settle()
+        completed = True
     finally:
+        if not completed:
+            # An exception mid-run can leave a lamp lit or a scene cycling;
+            # best-effort restore before letting go of the fan.
+            print("\nRun aborted early; restoring the fan to off")
+            for restore in (
+                device.async_stop_scene,
+                device.async_turn_color_off,
+                lambda: device.async_set_white_light(False),
+                lambda: device.async_set_fan(False),
+            ):
+                with contextlib.suppress(Exception):
+                    await restore()
         await device.stop()
 
     failed = [r for r in results if r[0] == FAIL]
@@ -174,4 +198,7 @@ async def main(address: str) -> int:
 
 
 if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print(__doc__.strip())
+        raise SystemExit(2)
     raise SystemExit(asyncio.run(main(sys.argv[1])))
