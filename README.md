@@ -7,6 +7,8 @@ No cloud, no vendor app, no account — Home Assistant talks straight to the fan
 over BLE.
 
 [![hacs][hacs-badge]][hacs]
+[![release][release-badge]][releases]
+[![license][license-badge]](LICENSE)
 
 ## What you get
 
@@ -35,6 +37,16 @@ target:
 data:
   effect: Christmas
   brightness: 255
+```
+
+or, with the select:
+
+```yaml
+service: select.select_option
+target:
+  entity_id: select.chromacomfort_scene
+data:
+  option: Christmas
 ```
 
 All seven of the vendor app's scenes are included — Sunset, Sunrise, Tropical
@@ -86,7 +98,8 @@ lists. Any unit that advertises as `Chroma-Comfort` should work.
 
 ## Requirements
 
-- Home Assistant 2024.8 or newer
+- Home Assistant 2024.8 or newer (on 2026.3+ the device also shows the
+  ChromaComfort icon, served from the integration's `brand/` directory)
 - A Bluetooth adapter, or an [ESPHome Bluetooth proxy][proxy] within range of
   the fan
 
@@ -140,9 +153,15 @@ not, most of the time. So unavailable means the fan has gone out of range or los
 power. Entities that are available but showing stale values are a different
 thing; see [Sharing the fan with the phone app](#sharing-the-fan-with-the-phone-app).
 
-**A command failed with the app open.** The fan takes one connection at a time.
-If the ChromaComfort app is actively connected, Home Assistant cannot reach the
-fan until the app disconnects.
+**"Could not reach &lt;fan&gt;" when running a command.** The fan takes one
+connection at a time. If the ChromaComfort app is actively connected, Home
+Assistant cannot reach the fan until the app disconnects. The command can
+simply be retried once the app lets go.
+
+**The Scene select shows nothing while colours are animating.** The fan never
+reports *which* scene is loaded, only that one is playing. If playback was
+started from the phone app rather than Home Assistant, the select honestly
+shows unknown; picking any option takes over from there.
 
 To report a problem, enable debug logging and include the output:
 
@@ -152,12 +171,14 @@ logger:
     custom_components.chromacomfort: debug
 ```
 
-## Protocol
+## Protocol and further documentation
 
-The wire protocol is documented in [PROTOCOL.md](PROTOCOL.md) — frame format,
-opcodes, the status bitmask, the CRC algorithm, and the three non-obvious rules
-you have to follow to make the fan listen. It is written to be useful to anyone
-working with this hardware, not just to this integration.
+- [PROTOCOL.md](PROTOCOL.md) — the wire protocol: frame format, opcodes, the
+  status bitmask, the CRC algorithm, and the three non-obvious rules you have
+  to follow to make the fan listen. Written to be useful to anyone working
+  with this hardware, not just to this integration.
+- [docs/SCENES.md](docs/SCENES.md) — every animated scene with its palette
+  strip, hex colours, and cycle time.
 
 Development tools live in `tools/`:
 
@@ -183,4 +204,7 @@ Not affiliated with or endorsed by Broan-NuTone. Licensed MIT.
 
 [hacs]: https://github.com/hacs/integration
 [hacs-badge]: https://img.shields.io/badge/HACS-Custom-41BDF5.svg
+[releases]: https://github.com/seeloesix/chromacomfort_hass_int/releases
+[release-badge]: https://img.shields.io/github/v/release/seeloesix/chromacomfort_hass_int
+[license-badge]: https://img.shields.io/github/license/seeloesix/chromacomfort_hass_int
 [proxy]: https://esphome.io/components/bluetooth_proxy.html
