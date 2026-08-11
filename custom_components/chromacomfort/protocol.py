@@ -49,8 +49,6 @@ CMD_WALL_RGB_OFF: Final = 0x06
 CMD_FAVORITE_ON: Final = 0x0B
 CMD_FAVORITE_OFF: Final = 0x0C
 CMD_SAVE_FAVORITE: Final = 0x0D
-CMD_COUNTDOWN_ON: Final = 0x11
-CMD_COUNTDOWN_OFF: Final = 0x12
 CMD_PATTERN_ON: Final = 0x20
 CMD_PATTERN_OFF: Final = 0x21
 CMD_PATTERN_SAVE: Final = 0x2A
@@ -63,8 +61,10 @@ SAVE_FAVORITE_SPEED: Final = 30
 GAMMA: Final = 4
 
 # A scene is stored in eight colour slots across two frames.
-SCENE_SLOTS: Final = 8
 MAX_SCENE_COLORS: Final = 8
+
+# The dimmer field is a percentage in both directions.
+MAX_DIMMER: Final = 100
 
 # Status mask bits, frame byte 5.
 MASK_FAN: Final = 0x80
@@ -310,6 +310,10 @@ def parse_status(frame: bytes, *, verify_crc: bool = True) -> ChromaComfortState
         raise ChromaComfortProtocolError(
             f"not a status frame: control bytes 0x{frame[3]:02x} 0x{frame[4]:02x}"
         )
+    if frame[2] != RX_VERSION:
+        raise ChromaComfortProtocolError(f"bad version byte 0x{frame[2]:02x}")
+    if frame[7] > MAX_DIMMER:
+        raise ChromaComfortProtocolError(f"brightness {frame[7]} out of range 0-{MAX_DIMMER}")
     if verify_crc:
         expected = frame_crc(frame)
         if frame[18] != expected:

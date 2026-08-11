@@ -35,6 +35,20 @@ def _is_chromacomfort(info: BluetoothServiceInfoBleak) -> bool:
     return bool(info.name and info.name.startswith(DEVICE_NAME_PREFIX))
 
 
+def _display_name(name: str | None) -> str:
+    """Sanitise an advertised name before it reaches the frontend.
+
+    The name is attacker-controlled radio data and ends up in markdown-rendered
+    dialog text ("Set up {name}?"), so strip markdown-active characters and
+    control codes, and bound the length.
+    """
+    if not name:
+        return "ChromaComfort"
+    cleaned = "".join(c for c in name if c.isprintable() and c not in "[]()<>`#*_")
+    cleaned = cleaned.strip()
+    return cleaned[:40] or "ChromaComfort"
+
+
 class ChromaComfortConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle discovery and manual setup of ChromaComfort fans."""
 
@@ -56,7 +70,7 @@ class ChromaComfortConfigFlow(ConfigFlow, domain=DOMAIN):
         await self.async_set_unique_id(discovery_info.address)
         self._abort_if_unique_id_configured()
         self._discovered = discovery_info
-        self.context["title_placeholders"] = {"name": discovery_info.name}
+        self.context["title_placeholders"] = {"name": _display_name(discovery_info.name)}
         return await self.async_step_bluetooth_confirm()
 
     async def async_step_bluetooth_confirm(
@@ -66,34 +80,40 @@ class ChromaComfortConfigFlow(ConfigFlow, domain=DOMAIN):
         assert self._discovered is not None
         if user_input is not None:
             return self.async_create_entry(
-                title=self._discovered.name,
+                title=_display_name(self._discovered.name),
                 data={CONF_ADDRESS: self._discovered.address},
             )
         self._set_confirm_only()
         return self.async_show_form(
             step_id="bluetooth_confirm",
-            description_placeholders={"name": self._discovered.name},
+            description_placeholders={"name": _display_name(self._discovered.name)},
         )
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Pick from the fans Home Assistant can currently see."""
+        errors: dict[str, str] = {}
         if user_input is not None:
             address = user_input[CONF_ADDRESS]
-            await self.async_set_unique_id(address, raise_on_progress=False)
-            self._abort_if_unique_id_configured()
-            return self.async_create_entry(
-                title=self._discovered_devices[address],
-                data={CONF_ADDRESS: address},
-            )
+            # The schema's vol.In guards the normal UI path, but a flow started
+            # programmatically can arrive here with an address we never
+            # discovered -- show the picker again rather than blow up.
+            if address in self._discovered_devices:
+                await self.async_set_unique_id(address, raise_on_progress=False)
+                self._abort_if_unique_id_configured()
+                return self.async_create_entry(
+                    title=self._discovered_devices[address],
+                    data={CONF_ADDRESS: address},
+                )
+            errors["base"] = "device_not_found"
 
         current = self._async_current_ids()
         for info in async_discovered_service_info(self.hass, connectable=True):
             if info.address in current or info.address in self._discovered_devices:
                 continue
             if _is_chromacomfort(info):
-                self._discovered_devices[info.address] = info.name
+                self._discovered_devices[info.address] = _display_name(info.name)
 
         if not self._discovered_devices:
             return self.async_abort(reason="no_devices_found")
@@ -110,6 +130,7 @@ class ChromaComfortConfigFlow(ConfigFlow, domain=DOMAIN):
                     )
                 }
             ),
+            errors=errors,
         )
 
 

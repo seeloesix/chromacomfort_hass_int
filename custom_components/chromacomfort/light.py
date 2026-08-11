@@ -19,9 +19,11 @@ from homeassistant.components.light import (
     LightEntityFeature,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import ChromaComfortConfigEntry, protocol
+from .const import DOMAIN
 from .device import brightness_to_ha
 from .entity import ChromaComfortEntity
 
@@ -58,10 +60,12 @@ class ChromaComfortWhiteLight(ChromaComfortEntity, LightEntity):
         return None if state is None else brightness_to_ha(state.brightness)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        await self._device.async_set_white_light(True, kwargs.get(ATTR_BRIGHTNESS))
+        await self._run_command(
+            self._device.async_set_white_light(True, kwargs.get(ATTR_BRIGHTNESS))
+        )
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        await self._device.async_set_white_light(False)
+        await self._run_command(self._device.async_set_white_light(False))
 
 
 class ChromaComfortColorLight(ChromaComfortEntity, LightEntity):
@@ -109,16 +113,24 @@ class ChromaComfortColorLight(ChromaComfortEntity, LightEntity):
     async def async_turn_on(self, **kwargs: Any) -> None:
         brightness = kwargs.get(ATTR_BRIGHTNESS)
         if effect := kwargs.get(ATTR_EFFECT):
-            await self._device.async_set_scene(effect, brightness)
+            # Home Assistant passes the effect string through unvalidated, so a
+            # typo in an automation would otherwise surface as a KeyError.
+            if effect not in protocol.BUILTIN_SCENES:
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN,
+                    translation_key="unknown_effect",
+                    translation_placeholders={"effect": effect},
+                )
+            await self._run_command(self._device.async_set_scene(effect, brightness))
             return
         # Choosing a colour leaves scene mode; the fan switches by itself, since
         # only one colour mode can be active at a time.
-        await self._device.async_set_color_light(
-            True, brightness, kwargs.get(ATTR_RGB_COLOR)
+        await self._run_command(
+            self._device.async_set_color_light(True, brightness, kwargs.get(ATTR_RGB_COLOR))
         )
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         # The device decides between stopping a scene and clearing the solid
         # colour, because that has to be judged against state read on the same
         # connection -- ours here may predate the last change made in the app.
-        await self._device.async_turn_color_off()
+        await self._run_command(self._device.async_turn_color_off())

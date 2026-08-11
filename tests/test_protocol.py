@@ -121,6 +121,33 @@ class TestParseStatus:
         frame[18] ^= 0xFF
         assert p.parse_status(bytes(frame), verify_crc=False).mask == frame[5]
 
+    def test_rejects_wrong_version_even_with_valid_crc(self):
+        # A structurally valid frame from a peripheral speaking a different
+        # dialect must not be trusted just because its CRC checks out.
+        frame = bytearray(UNIQUE[0])
+        frame[2] = 0x01
+        frame[18] = p.frame_crc(bytes(frame))
+        with pytest.raises(p.ChromaComfortProtocolError, match="bad version"):
+            p.parse_status(bytes(frame))
+
+    def test_rejects_out_of_range_brightness_even_with_valid_crc(self):
+        # The dimmer field is 0-100; 255 here means a malfunctioning or hostile
+        # device, not a brighter light.
+        frame = bytearray(UNIQUE[0])
+        frame[7] = 255
+        frame[18] = p.frame_crc(bytes(frame))
+        with pytest.raises(p.ChromaComfortProtocolError, match="brightness"):
+            p.parse_status(bytes(frame))
+
+    def test_accepts_all_mask_bits_set(self):
+        # An impossible mode combination decodes without error -- each bit is
+        # reported independently and downstream code treats them as booleans.
+        frame = bytearray(UNIQUE[0])
+        frame[5] = 0xFF
+        frame[18] = p.frame_crc(bytes(frame))
+        state = p.parse_status(bytes(frame))
+        assert state.fan_on and state.light_on and state.user_pattern_on
+
 
 class TestFrameClassification:
     @pytest.mark.parametrize("frame", UNIQUE, ids=lambda f: f.hex())

@@ -10,6 +10,12 @@ between its BLE GATT service and the fan's host MCU, which is why the protocol
 carries its own start byte, length and checksum: that framing exists for the
 serial link, not for GATT.
 
+GooWi's module datasheet (titled for the earlier `GWLE1010A` revision; the
+FCC filing for the unit in these fans is the `B`) is copyrighted vendor
+material, so it is not shipped in this repository. It is publicly available
+from the FCC OET equipment-authorization database — search for FCC ID
+`2AFJJGWLE1010B`.
+
 ## GATT layout
 
 Verified by enumeration against a live unit (firmware `20190311`):

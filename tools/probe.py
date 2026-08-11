@@ -99,7 +99,12 @@ async def _subscribe(client: BleakClient, on_state) -> None:
 
 
 async def watch(address: str, seconds: float = 60.0) -> None:
-    """Log every status change, reconnecting if the app steals the connection."""
+    """Log every status change, reconnecting if the app steals the connection.
+
+    Warning: the reconnect loop contests the fan's single Bluetooth connection
+    for the whole duration, so the vendor phone app (and the Home Assistant
+    integration) will struggle to connect until it exits. Keep runs short.
+    """
     import time
 
     started = time.time()

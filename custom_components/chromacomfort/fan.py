@@ -37,7 +37,7 @@ class ChromaComfortFan(ChromaComfortEntity, FanEntity):
         return None if state is None else state.fan_on
 
     async def async_turn_on(self, percentage: int | None = None, preset_mode: str | None = None, **kwargs: Any) -> None:
-        await self._device.async_set_fan(True)
+        await self._run_command(self._device.async_set_fan(True))
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        await self._device.async_set_fan(False)
+        await self._run_command(self._device.async_set_fan(False))

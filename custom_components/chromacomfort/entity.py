@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Coroutine
+from typing import Any
+
+from bleak.exc import BleakError
 from homeassistant.core import callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import CONNECTION_BLUETOOTH, DeviceInfo
 from homeassistant.helpers.entity import Entity
 
@@ -25,6 +31,22 @@ class ChromaComfortEntity(Entity):
             model=MODEL,
             name=device.name,
         )
+
+    async def _run_command(self, command: Coroutine[Any, Any, None]) -> None:
+        """Run a device command, surfacing transport failures as user errors.
+
+        The routine failure here -- the phone app holding the fan's single
+        connection -- should read as a clear message, not an "unexpected error"
+        traceback.
+        """
+        try:
+            await command
+        except (BleakError, asyncio.TimeoutError) as err:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="cannot_connect",
+                translation_placeholders={"name": self._device.name},
+            ) from err
 
     @property
     def available(self) -> bool:

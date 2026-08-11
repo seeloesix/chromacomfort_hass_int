@@ -19,7 +19,11 @@ from .device import ChromaComfortDevice
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.FAN, Platform.LIGHT, Platform.SWITCH]
+PLATFORMS: list[Platform] = [Platform.FAN, Platform.LIGHT, Platform.SELECT, Platform.SWITCH]
+
+# Hard ceiling on a whole background refresh, comfortably above the worst-case
+# bounded connect (retry attempts x CONNECT_TIMEOUT in the device layer).
+REFRESH_TIMEOUT = 120.0
 
 type ChromaComfortConfigEntry = ConfigEntry[ChromaComfortDevice]
 
@@ -71,7 +75,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ChromaComfortConfigEntry
 
 async def _async_initial_refresh(device: ChromaComfortDevice) -> None:
     try:
-        await device.async_refresh_state()
+        async with asyncio.timeout(REFRESH_TIMEOUT):
+            await device.async_refresh_state()
     except (BleakError, asyncio.TimeoutError) as err:
         _LOGGER.debug("Initial state read for %s failed: %s", device.address, err)
 
@@ -86,8 +91,14 @@ def _async_schedule_refresh(
         return
 
     async def _refresh(_now) -> None:
+        # The interval tracker never awaits the previous run, so guard against
+        # refreshes stacking up behind a slow or stuck operation.
+        if device.busy:
+            _LOGGER.debug("Skipping scheduled state read for %s: busy", device.address)
+            return
         try:
-            await device.async_refresh_state()
+            async with asyncio.timeout(REFRESH_TIMEOUT):
+                await device.async_refresh_state()
         except (BleakError, asyncio.TimeoutError) as err:
             # Routine: most likely the phone app has the fan. Keep the last
             # known state and try again next interval.

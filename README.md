@@ -10,19 +10,23 @@ over BLE.
 
 ## What you get
 
-Each fan appears as one device with four entities:
+Each fan appears as one device with five entities:
 
 | Entity | Type | Capabilities |
 |---|---|---|
 | Fan | `fan` | on / off (the unit is single-speed) |
 | Light | `light` | on / off, brightness |
 | Color light | `light` | on / off, brightness, RGB colour, **19 animated scenes** |
+| Scene | `select` | start or stop a scene straight from the device page |
 | Color cycle | `switch` | the fan's built-in colour sweep |
 
 ### Scenes
 
-The colour light exposes animated scenes as Home Assistant **effects**, so you
-can pick one from the light's more-info dialog or set it from an automation:
+Every scene's palette and cycle time is documented in
+[docs/SCENES.md](docs/SCENES.md). The **Scene** select on the device page
+starts one (or **Off** stops playback), and the colour light exposes the same
+scenes as Home Assistant **effects**, so you can also pick one from the
+light's more-info dialog or set it from an automation:
 
 ```yaml
 service: light.turn_on
